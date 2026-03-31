@@ -45,9 +45,9 @@ impl ClipEntry {
         let secs = self.age_secs();
         match secs {
             s if s < 60 => fl!("time-just-now"),
-            s if s < 3_600 => fl!("time-minutes-ago", count = s / 60),
-            s if s < 86_400 => fl!("time-hours-ago", count = s / 3_600),
-            s => fl!("time-days-ago", count = s / 86_400),
+            s if s < 3_600 => fl!("time-minutes-ago", count = (s / 60i64)),
+            s if s < 86_400 => fl!("time-hours-ago", count = (s / 3_600i64)),
+            s => fl!("time-days-ago", count = (s / 86_400i64)),
         }
     }
 }

@@ -56,3 +56,8 @@ features = [
 # libcosmic = { path = "../libcosmic" }
 # cosmic-config = { path = "../libcosmic/cosmic-config" }
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
+
+# Pin cosmic-text to the exact commit that libcosmic's vendored iced expects.
+# Without this, Cargo resolves a newer incompatible HEAD.
+[patch.'https://github.com/pop-os/cosmic-text']
+cosmic-text = { path = "../cosmic-text" }

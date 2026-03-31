@@ -1,0 +1,9 @@
+app-title = Clip Pop
+about = About
+repository = Repository
+view = View
+clipboard-history = Clipboard History
+empty-history = No clipboard history yet.
+clear-all = Clear All
+copied = Copied!
+git-description = Git commit {$hash} on {$date}

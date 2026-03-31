@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Clip Pop
+Comment=A clipboard manager for the COSMIC™ desktop
+Type=Application
+Icon=com.github.jvcByte.clip_pop
+Exec=clip_pop %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=

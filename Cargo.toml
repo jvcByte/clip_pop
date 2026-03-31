@@ -6,6 +6,9 @@ license = "MIT"
 description = "A clipboard manager for the COSMIC™ desktop"
 repository = "https://github.com/jvcByte/clip_pop"
 
+[package.metadata]
+app-id = "com.github.jvcByte.clip_pop"
+
 [dependencies]
 arboard = "3"
 chrono = { version = "0.4", features = ["serde"] }

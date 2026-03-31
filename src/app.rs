@@ -3,7 +3,7 @@
 //! Application model, view, and update logic.
 
 use crate::clipboard;
-use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
+use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME, APP_ID};
 use crate::fl;
 use crate::history::HistoryStore;
 use cosmic::app::context_drawer;
@@ -56,7 +56,7 @@ impl cosmic::Application for AppModel {
     type Flags = ();
     type Message = Message;
 
-    const APP_ID: &'static str = "com.github.jvcByte.clip_pop";
+    const APP_ID: &'static str = config::APP_ID;
 
     fn core(&self) -> &cosmic::Core {
         &self.core

@@ -6,6 +6,12 @@
 use cosmic::cosmic_config::{self, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry};
 use tracing::error;
 
+// ── Identity ──────────────────────────────────────────────────────────────────
+
+/// Application ID in RDNN format. Defined once in `Cargo.toml`
+/// under `[package.metadata] app-id` and injected at compile time by `build.rs`.
+pub const APP_ID: &str = env!("APP_ID");
+
 // ── History ───────────────────────────────────────────────────────────────────
 
 pub const MIN_HISTORY: usize = 10;

@@ -10,7 +10,7 @@ repository = "https://github.com/jvcByte/clip_pop"
 app-id = "com.github.jvcByte.clip_pop"
 
 [dependencies]
-arboard = "3"
+arboard = { version = "3", features = ["wayland-data-control"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 futures-util = "0.3.31"

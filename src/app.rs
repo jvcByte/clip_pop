@@ -3,11 +3,10 @@
 //! Application model, view, and update logic.
 
 use crate::clipboard;
-use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME, APP_ID};
+use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
 use crate::fl;
 use crate::history::HistoryStore;
 use cosmic::app::context_drawer;
-use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};

@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: MIT
 
-use crate::config::Config;
+//! Application model, view, and update logic.
+
+use crate::clipboard;
+use crate::config::{self, Config};
 use crate::fl;
-use arboard::Clipboard;
+use crate::history::HistoryStore;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
+use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};
-use cosmic::{iced_futures, prelude::*};
-use futures_util::SinkExt;
+use cosmic::prelude::*;
 use std::collections::HashMap;
-use std::time::Duration;
+use tracing::error;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
+
+/// Preview character limit for history list items.
+const PREVIEW_CHARS: usize = 100;
 
 pub struct AppModel {
     core: cosmic::Core,
@@ -21,23 +27,31 @@ pub struct AppModel {
     about: About,
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     config: Config,
-    /// Clipboard history, newest first.
-    history: Vec<String>,
-    /// The last clipboard content we saw, to detect changes.
-    last_clipboard: Option<String>,
+    history: HistoryStore,
+    /// Current search query entered by the user.
+    search_query: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    LaunchUrl(String),
-    ToggleContextPage(ContextPage),
-    UpdateConfig(Config),
-    /// Fired on each clipboard poll tick.
-    ClipboardTick(Option<String>),
-    /// User clicked an item to copy it back.
+    /// A new clipboard value was detected by the background watcher.
+    ClipboardChanged(Option<String>),
+    /// User clicked a history item to copy it.
     CopyItem(usize),
-    /// Clear all history.
+    /// User clicked the delete button on a history item.
+    DeleteItem(usize),
+    /// User pressed "Clear All".
     ClearAll,
+    /// Search bar input changed.
+    SearchChanged(String),
+    /// Clear the search bar.
+    SearchClear,
+    /// Open a URL (used by the About page).
+    LaunchUrl(String),
+    /// Toggle a context drawer page.
+    ToggleContextPage(ContextPage),
+    /// Config was updated externally (dbus-config watch).
+    UpdateConfig(Config),
 }
 
 impl cosmic::Application for AppModel {
@@ -59,6 +73,15 @@ impl cosmic::Application for AppModel {
         core: cosmic::Core,
         _flags: Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
+        let config = config::load(Self::APP_ID);
+
+        let history_path = dirs::data_local_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("clip_pop")
+            .join("history.json");
+
+        let history = HistoryStore::load(history_path, config.max_history);
+
         let about = About::default()
             .name(fl!("app-title"))
             .icon(widget::icon::from_svg_bytes(APP_ICON))
@@ -71,11 +94,9 @@ impl cosmic::Application for AppModel {
             context_page: ContextPage::default(),
             about,
             key_binds: HashMap::new(),
-            config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
-                .map(|ctx| Config::get_entry(&ctx).unwrap_or_default())
-                .unwrap_or_default(),
-            history: Vec::new(),
-            last_clipboard: None,
+            config,
+            history,
+            search_query: String::new(),
         };
 
         let command = app.update_title();
@@ -109,48 +130,81 @@ impl cosmic::Application for AppModel {
     fn view(&self) -> Element<'_, Self::Message> {
         let spacing = cosmic::theme::spacing();
 
-        let header = widget::row::with_capacity(2)
-            .push(widget::text::title3(fl!("clipboard-history")).width(Length::Fill))
+        // ── Search bar ────────────────────────────────────────────────────────
+        let search = widget::search_input(fl!("search-placeholder"), &self.search_query)
+            .on_input(Message::SearchChanged)
+            .on_clear(Message::SearchClear)
+            .width(Length::Fill);
+
+        // ── Toolbar ───────────────────────────────────────────────────────────
+        let toolbar = widget::row::with_capacity(2)
+            .push(search)
             .push(
                 widget::button::destructive(fl!("clear-all"))
                     .on_press(Message::ClearAll),
             )
-            .padding(spacing.space_s)
-            .spacing(spacing.space_s);
+            .spacing(spacing.space_s)
+            .padding([spacing.space_s, spacing.space_m]);
 
-        let content: Element<_> = if self.history.is_empty() {
-            widget::container(widget::text::body(fl!("empty-history")))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(cosmic::iced::alignment::Horizontal::Center)
-                .align_y(cosmic::iced::alignment::Vertical::Center)
-                .into()
+        // ── History list ──────────────────────────────────────────────────────
+        let query = self.search_query.to_lowercase();
+        let filtered: Vec<(usize, _)> = self
+            .history
+            .entries()
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                query.is_empty() || e.content.to_lowercase().contains(&query)
+            })
+            .collect();
+
+        let content: Element<_> = if filtered.is_empty() {
+            widget::container(
+                widget::text::body(if self.search_query.is_empty() {
+                    fl!("empty-history")
+                } else {
+                    fl!("no-results")
+                })
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center)
+            .into()
         } else {
-            let items = self.history.iter().enumerate().fold(
-                widget::list_column(),
-                |col, (i, entry)| {
-                    let preview = if entry.len() > 80 {
-                        format!("{}…", &entry[..80])
-                    } else {
-                        entry.clone()
-                    };
-                    col.add(
-                        widget::button::custom(
-                            widget::text::body(preview).width(Length::Fill),
-                        )
-                        .on_press(Message::CopyItem(i))
-                        .width(Length::Fill),
+            let list = filtered.iter().fold(widget::list_column(), |col, (i, entry)| {
+                let preview = entry.preview(PREVIEW_CHARS);
+                let time = entry.relative_time();
+
+                let row = widget::row::with_capacity(3)
+                    .push(
+                        widget::column::with_capacity(2)
+                            .push(widget::text::body(preview).width(Length::Fill))
+                            .push(widget::text::caption(time))
+                            .width(Length::Fill),
                     )
-                },
-            );
-            widget::scrollable(items)
+                    .push(
+                        widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                            .on_press(Message::DeleteItem(*i)),
+                    )
+                    .spacing(spacing.space_s)
+                    .align_y(cosmic::iced::Alignment::Center);
+
+                col.add(
+                    widget::button::custom(row)
+                        .on_press(Message::CopyItem(*i))
+                        .width(Length::Fill),
+                )
+            });
+
+            widget::scrollable(list)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
         };
 
         widget::column::with_capacity(2)
-            .push(header)
+            .push(toolbar)
             .push(content)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -163,60 +217,47 @@ impl cosmic::Application for AppModel {
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::UpdateConfig(update.config));
 
-        // Poll clipboard every 500ms in a background stream.
-        let clipboard_poll = Subscription::run(|| {
-            iced_futures::stream::channel(1, |mut tx| async move {
-                let mut clipboard = Clipboard::new().ok();
-                let mut last: Option<String> = None;
-                let mut interval = tokio::time::interval(Duration::from_millis(500));
-                loop {
-                    interval.tick().await;
-                    let current = clipboard
-                        .as_mut()
-                        .and_then(|c| c.get_text().ok());
-                    if current != last {
-                        last = current.clone();
-                        let _ = tx.send(Message::ClipboardTick(current)).await;
-                    }
-                }
-            })
-        });
+        let clipboard_watch = clipboard::watch(self.config.poll_interval_ms)
+            .map(Message::ClipboardChanged);
 
-        Subscription::batch([config_watch, clipboard_poll])
+        Subscription::batch([config_watch, clipboard_watch])
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::ClipboardTick(Some(text)) => {
-                if self.last_clipboard.as_deref() != Some(text.as_str()) {
-                    self.last_clipboard = Some(text.clone());
-                    // Avoid duplicates at the top
-                    self.history.retain(|e| e != &text);
-                    self.history.insert(0, text);
-                    // Trim to max history
-                    self.history.truncate(self.config.max_history);
-                }
+            Message::ClipboardChanged(Some(text)) => {
+                self.history.push(text);
             }
 
-            Message::ClipboardTick(None) => {}
+            Message::ClipboardChanged(None) => {}
 
             Message::CopyItem(i) => {
-                if let Some(text) = self.history.get(i).cloned() {
-                    if let Ok(mut cb) = Clipboard::new() {
-                        let _ = cb.set_text(&text);
-                        // Move to top
-                        self.history.remove(i);
-                        self.history.insert(0, text);
+                if let Some(entry) = self.history.promote(i) {
+                    if let Err(e) = clipboard::set_text(&entry.content.clone()) {
+                        error!("failed to set clipboard: {e}");
                     }
                 }
             }
 
+            Message::DeleteItem(i) => {
+                self.history.remove(i);
+            }
+
             Message::ClearAll => {
                 self.history.clear();
-                self.last_clipboard = None;
+            }
+
+            Message::SearchChanged(query) => {
+                self.search_query = query;
+            }
+
+            Message::SearchClear => {
+                self.search_query.clear();
             }
 
             Message::UpdateConfig(config) => {
+                let config = config.validated();
+                self.history.set_max(config.max_history);
                 self.config = config;
             }
 
@@ -230,9 +271,12 @@ impl cosmic::Application for AppModel {
             }
 
             Message::LaunchUrl(url) => {
-                let _ = open::that_detached(&url);
+                if let Err(e) = open::that_detached(&url) {
+                    error!("failed to open url {url:?}: {e}");
+                }
             }
         }
+
         Task::none()
     }
 }

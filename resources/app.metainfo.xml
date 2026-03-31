@@ -4,17 +4,26 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>Clip Pop</name>
-  <summary>A clipboard manager for the COSMIC™ desktop</summary>
-  <icon type="remote" width="64" height="64" scale="1">
-    https://github.com/jvcByte/clip_pop/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
-  </icon>
+  <summary>Clipboard manager for the COSMIC™ desktop</summary>
+  <description>
+    <p>
+      Clip Pop is a clipboard manager built natively for the COSMIC™ desktop environment.
+      It keeps a searchable history of everything you copy, lets you re-paste any previous
+      entry with a single click, and persists your history across reboots.
+    </p>
+    <ul>
+      <li>Searchable clipboard history</li>
+      <li>Persistent history across sessions</li>
+      <li>Configurable history size and poll interval</li>
+      <li>Delete individual entries or clear all at once</li>
+    </ul>
+  </description>
+  <url type="homepage">https://github.com/jvcByte/clip_pop</url>
   <url type="vcs-browser">https://github.com/jvcByte/clip_pop</url>
+  <url type="bugtracker">https://github.com/jvcByte/clip_pop/issues</url>
   <launchable type="desktop-id">com.github.jvcByte.clip_pop.desktop</launchable>
   <provides>
-    <id>com.github.jvcByte.clip_pop</id>
-    <binaries>
-      <binary>clip_pop</binary>
-    </binaries>
+    <binary>clip_pop</binary>
   </provides>
   <requires>
     <display_length compare="ge">360</display_length>
@@ -22,14 +31,23 @@
   <supports>
     <control>keyboard</control>
     <control>pointing</control>
-    <control>touch</control>
   </supports>
   <categories>
-    <category>COSMIC</category>
+    <category>Utility</category>
   </categories>
   <keywords>
+    <keyword>clipboard</keyword>
+    <keyword>copy</keyword>
+    <keyword>paste</keyword>
+    <keyword>history</keyword>
     <keyword>COSMIC</keyword>
   </keywords>
   <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-03-31">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
 </component>
-

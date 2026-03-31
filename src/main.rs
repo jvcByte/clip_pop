@@ -1,23 +1,31 @@
 // SPDX-License-Identifier: MIT
 
+#![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
+
 mod app;
+mod clipboard;
 mod config;
+mod history;
 mod i18n;
 
 fn main() -> cosmic::iced::Result {
-    // Get the system's preferred languages.
-    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
+    // Structured logging — respects RUST_LOG env var, defaults to info.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
 
-    // Enable localizations to be applied.
+    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
     i18n::init(&requested_languages);
 
-    // Settings for configuring the application window and iced runtime.
     let settings = cosmic::app::Settings::default().size_limits(
         cosmic::iced::Limits::NONE
             .min_width(360.0)
-            .min_height(180.0),
+            .min_height(480.0),
     );
 
-    // Starts the application's event loop with `()` as the application's flags.
     cosmic::app::run::<app::AppModel>(settings, ())
 }

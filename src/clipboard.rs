@@ -7,7 +7,7 @@
 
 use crate::config::CLIPBOARD_SUBSCRIPTION_ID;
 use arboard::Clipboard;
-use cosmic::iced_futures::{self, Subscription};
+use cosmic::iced_futures::Subscription;
 use cosmic::iced_futures::futures::channel::mpsc::Sender;
 use cosmic::iced_futures::futures::SinkExt;
 use cosmic::iced_futures::stream;
@@ -30,8 +30,7 @@ pub fn watch(interval_ms: u64) -> Subscription<Option<String>> {
                     Ok(cb) => cb,
                     Err(e) => {
                         error!("failed to open clipboard: {e}");
-                        std::future::pending::<()>().await;
-                        unreachable!()
+                        return;
                     }
                 };
 

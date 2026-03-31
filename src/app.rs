@@ -132,7 +132,7 @@ impl cosmic::Application for AppModel {
             .on_clear(Message::SearchClear)
             .width(Length::Fill);
 
-        // ── Toolbar ───────────────────────────────────────────────────────────
+        // ── Toolbar: search + clear all ───────────────────────────────────────
         let toolbar = widget::row::with_capacity(2)
             .push(search)
             .push(
@@ -140,7 +140,7 @@ impl cosmic::Application for AppModel {
                     .on_press(Message::ClearAll),
             )
             .spacing(spacing.space_s)
-            .padding([spacing.space_s, spacing.space_m]);
+            .padding([spacing.space_xs, spacing.space_s]);
 
         // ── History list ──────────────────────────────────────────────────────
         let query = self.search_query.to_lowercase();
@@ -149,18 +149,23 @@ impl cosmic::Application for AppModel {
             .entries()
             .iter()
             .enumerate()
-            .filter(|(_, e)| {
-                query.is_empty() || e.content.to_lowercase().contains(&query)
-            })
+            .filter(|(_, e)| query.is_empty() || e.content.to_lowercase().contains(&query))
             .collect();
 
         let content: Element<_> = if filtered.is_empty() {
             widget::container(
-                widget::text::body(if self.search_query.is_empty() {
-                    fl!("empty-history")
-                } else {
-                    fl!("no-results")
-                })
+                widget::column::with_capacity(2)
+                    .push(
+                        widget::icon(widget::icon::from_name("edit-paste-symbolic").handle())
+                            .size(48),
+                    )
+                    .push(widget::text::body(if self.search_query.is_empty() {
+                        fl!("empty-history")
+                    } else {
+                        fl!("no-results")
+                    }))
+                    .spacing(spacing.space_m)
+                    .align_x(cosmic::iced::Alignment::Center),
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -168,30 +173,40 @@ impl cosmic::Application for AppModel {
             .align_y(Vertical::Center)
             .into()
         } else {
-            let list = filtered.iter().fold(widget::list_column(), |col, (i, entry)| {
-                let preview = entry.preview(self.config.preview_chars);
-                let time = entry.relative_time_i18n();
+            let list = filtered
+                .iter()
+                .fold(widget::list_column(), |col, (i, entry)| {
+                    // First line: content preview
+                    let preview = entry.preview(self.config.preview_chars);
+                    // Second line: timestamp right-aligned
+                    let time = entry.relative_time_i18n();
 
-                let row = widget::row::with_capacity(3)
-                    .push(
-                        widget::column::with_capacity(2)
-                            .push(widget::text::body(preview).width(Length::Fill))
-                            .push(widget::text::caption(time))
+                    let meta_row = widget::row::with_capacity(2)
+                        .push(
+                            widget::text::caption(time)
+                                .width(Length::Fill),
+                        )
+                        .push(
+                            widget::button::icon(
+                                widget::icon::from_name("edit-delete-symbolic"),
+                            )
+                            .on_press(Message::DeleteItem(*i)),
+                        )
+                        .align_y(cosmic::iced::Alignment::Center);
+
+                    let item = widget::column::with_capacity(2)
+                        .push(widget::text::body(preview).width(Length::Fill))
+                        .push(meta_row)
+                        .spacing(spacing.space_xxxs)
+                        .width(Length::Fill)
+                        .padding([spacing.space_xxs, spacing.space_xs]);
+
+                    col.add(
+                        widget::button::custom(item)
+                            .on_press(Message::CopyItem(*i))
                             .width(Length::Fill),
                     )
-                    .push(
-                        widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
-                            .on_press(Message::DeleteItem(*i)),
-                    )
-                    .spacing(spacing.space_s)
-                    .align_y(cosmic::iced::Alignment::Center);
-
-                col.add(
-                    widget::button::custom(row)
-                        .on_press(Message::CopyItem(*i))
-                        .width(Length::Fill),
-                )
-            });
+                });
 
             widget::scrollable(list)
                 .width(Length::Fill)

@@ -9,7 +9,7 @@ mod config;
 mod history;
 mod i18n;
 
-use config::{DEFAULT_LOG_LEVEL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH};
+use config::{DEFAULT_LOG_LEVEL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, WINDOW_WIDTH, WINDOW_HEIGHT};
 
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt()
@@ -22,11 +22,14 @@ fn main() -> cosmic::iced::Result {
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
     i18n::init(&requested_languages);
 
-    let settings = cosmic::app::Settings::default().size_limits(
-        cosmic::iced::Limits::NONE
-            .min_width(WINDOW_MIN_WIDTH)
-            .min_height(WINDOW_MIN_HEIGHT),
-    );
+    let settings = cosmic::app::Settings::default()
+        .size(cosmic::iced::Size::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+        .size_limits(
+            cosmic::iced::Limits::NONE
+                .min_width(WINDOW_MIN_WIDTH)
+                .min_height(WINDOW_MIN_HEIGHT),
+        )
+        .resizable(Some(1.0));
 
     cosmic::app::run::<app::AppModel>(settings, ())
 }

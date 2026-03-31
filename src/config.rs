@@ -31,8 +31,11 @@ pub const DEFAULT_PREVIEW_CHARS: usize = 100;
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
-pub const WINDOW_MIN_WIDTH: f32 = 360.0;
-pub const WINDOW_MIN_HEIGHT: f32 = 480.0;
+/// Narrow panel feel — like a clipboard, not a full app window.
+pub const WINDOW_WIDTH: f32 = 380.0;
+pub const WINDOW_HEIGHT: f32 = 600.0;
+pub const WINDOW_MIN_WIDTH: f32 = 320.0;
+pub const WINDOW_MIN_HEIGHT: f32 = 400.0;
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 

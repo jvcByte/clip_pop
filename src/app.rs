@@ -175,15 +175,16 @@ impl cosmic::Application for AppModel {
         } else {
             let list = filtered
                 .iter()
-                .fold(widget::list_column(), |col, (i, entry)| {
-                    // First line: content preview
+                .fold(widget::list_column().spacing(0), |col, (i, entry)| {
                     let preview = entry.preview(self.config.preview_chars);
-                    // Second line: timestamp right-aligned
                     let time = entry.relative_time_i18n();
 
-                    let meta_row = widget::row::with_capacity(2)
+                    let item = widget::row::with_capacity(2)
                         .push(
-                            widget::text::caption(time)
+                            widget::column::with_capacity(2)
+                                .push(widget::text::body(preview))
+                                .push(widget::text::caption(time))
+                                .spacing(spacing.space_xxxs)
                                 .width(Length::Fill),
                         )
                         .push(
@@ -192,14 +193,9 @@ impl cosmic::Application for AppModel {
                             )
                             .on_press(Message::DeleteItem(*i)),
                         )
-                        .align_y(cosmic::iced::Alignment::Center);
-
-                    let item = widget::column::with_capacity(2)
-                        .push(widget::text::body(preview).width(Length::Fill))
-                        .push(meta_row)
-                        .spacing(spacing.space_xxxs)
-                        .width(Length::Fill)
-                        .padding([spacing.space_xxs, spacing.space_xs]);
+                        .align_y(cosmic::iced::Alignment::Center)
+                        .spacing(spacing.space_xs)
+                        .padding([spacing.space_xs, spacing.space_s]);
 
                     col.add(
                         widget::button::custom(item)

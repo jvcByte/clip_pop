@@ -5,6 +5,7 @@
 //! Runs in a background async stream, emitting the new clipboard text
 //! whenever it changes. Isolates all `arboard` usage from the UI layer.
 
+use crate::config::CLIPBOARD_SUBSCRIPTION_ID;
 use arboard::Clipboard;
 use cosmic::iced::Subscription;
 use cosmic::iced_futures;
@@ -17,7 +18,7 @@ use tracing::{error, warn};
 /// or `None` if the clipboard becomes empty / unreadable.
 pub fn watch(interval_ms: u64) -> Subscription<Option<String>> {
     Subscription::run_with_id(
-        "clipboard-watcher",
+        CLIPBOARD_SUBSCRIPTION_ID,
         iced_futures::stream::channel(1, move |mut tx| async move {
             let mut clipboard = match Clipboard::new() {
                 Ok(cb) => cb,

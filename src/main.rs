@@ -9,12 +9,13 @@ mod config;
 mod history;
 mod i18n;
 
+use config::{DEFAULT_LOG_LEVEL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH};
+
 fn main() -> cosmic::iced::Result {
-    // Structured logging — respects RUST_LOG env var, defaults to info.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(DEFAULT_LOG_LEVEL)),
         )
         .init();
 
@@ -23,8 +24,8 @@ fn main() -> cosmic::iced::Result {
 
     let settings = cosmic::app::Settings::default().size_limits(
         cosmic::iced::Limits::NONE
-            .min_width(360.0)
-            .min_height(480.0),
+            .min_width(WINDOW_MIN_WIDTH)
+            .min_height(WINDOW_MIN_HEIGHT),
     );
 
     cosmic::app::run::<app::AppModel>(settings, ())

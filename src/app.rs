@@ -3,7 +3,7 @@
 //! Application model, view, and update logic.
 
 use crate::clipboard;
-use crate::config::{self, Config};
+use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
 use crate::fl;
 use crate::history::HistoryStore;
 use cosmic::app::context_drawer;
@@ -17,9 +17,6 @@ use tracing::error;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
-
-/// Preview character limit for history list items.
-const PREVIEW_CHARS: usize = 100;
 
 pub struct AppModel {
     core: cosmic::Core,
@@ -76,9 +73,9 @@ impl cosmic::Application for AppModel {
         let config = config::load(Self::APP_ID);
 
         let history_path = dirs::data_local_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("clip_pop")
-            .join("history.json");
+            .unwrap_or_else(|| std::path::PathBuf::from(DATA_DIR_FALLBACK))
+            .join(DATA_DIR_NAME)
+            .join(HISTORY_FILE_NAME);
 
         let history = HistoryStore::load(history_path, config.max_history);
 
@@ -173,8 +170,8 @@ impl cosmic::Application for AppModel {
             .into()
         } else {
             let list = filtered.iter().fold(widget::list_column(), |col, (i, entry)| {
-                let preview = entry.preview(PREVIEW_CHARS);
-                let time = entry.relative_time();
+                let preview = entry.preview(self.config.preview_chars);
+                let time = entry.relative_time_i18n();
 
                 let row = widget::row::with_capacity(3)
                     .push(

@@ -2,6 +2,7 @@
 
 //! Clipboard history entry types and persistence.
 
+use crate::fl;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -34,15 +35,19 @@ impl ClipEntry {
         }
     }
 
-    /// Human-readable relative time string (e.g. "2 minutes ago").
-    pub fn relative_time(&self) -> String {
-        let now = Local::now();
-        let secs = (now - self.timestamp).num_seconds();
+    /// Returns the number of seconds elapsed since this entry was created.
+    pub fn age_secs(&self) -> i64 {
+        (Local::now() - self.timestamp).num_seconds()
+    }
+
+    /// Localised human-readable relative time string.
+    pub fn relative_time_i18n(&self) -> String {
+        let secs = self.age_secs();
         match secs {
-            s if s < 60 => "just now".to_owned(),
-            s if s < 3600 => format!("{} min ago", s / 60),
-            s if s < 86400 => format!("{} hr ago", s / 3600),
-            s => format!("{} days ago", s / 86400),
+            s if s < 60 => fl!("time-just-now"),
+            s if s < 3_600 => fl!("time-minutes-ago", count = s / 60),
+            s if s < 86_400 => fl!("time-hours-ago", count = s / 3_600),
+            s => fl!("time-days-ago", count = s / 86_400),
         }
     }
 }
@@ -75,7 +80,6 @@ impl HistoryStore {
         if content.trim().is_empty() {
             return false;
         }
-        // Remove existing duplicate
         self.entries.retain(|e| e.content != content);
         self.entries.insert(0, ClipEntry::new(content));
         self.entries.truncate(self.max);
@@ -83,7 +87,7 @@ impl HistoryStore {
         true
     }
 
-    /// Move an existing entry to the top and re-copy it.
+    /// Move an existing entry to the top.
     pub fn promote(&mut self, index: usize) -> Option<&ClipEntry> {
         if index >= self.entries.len() {
             warn!("promote: index {index} out of bounds");

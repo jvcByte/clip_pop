@@ -120,13 +120,10 @@ impl cosmic::Application for AppModel {
             "security-low-symbolic"
         };
         vec![
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name(icon_name))
-                    .on_press(Message::TogglePrivateMode),
-                widget::text(fl!("private-mode")),
-                widget::tooltip::Position::FollowCursor,
-            )
-            .into(),
+            widget::button::icon(widget::icon::from_name(icon_name))
+                .on_press(Message::TogglePrivateMode)
+                .selected(self.config.private_mode)
+                .into(),
         ]
     }
 
@@ -491,22 +488,22 @@ impl AppModel {
         };
 
         // ── Action buttons ────────────────────────────────────────────────────
-        let pin_icon = "view-pin-symbolic";
-        let pin_tooltip = if entry.pinned { fl!("action-unpin") } else { fl!("action-pin") };
+        let pin_icon = if entry.pinned {
+            "pin-symbolic"  // filled = pinned
+        } else {
+            "pin-symbolic"  // same icon, dimmed by button style when unpinned
+        };
 
         let actions = widget::row::with_capacity(2)
-            .push(widget::tooltip(
+            .push(
                 widget::button::icon(widget::icon::from_name(pin_icon))
-                    .on_press(Message::PinItem(index)),
-                widget::text(pin_tooltip),
-                widget::tooltip::Position::FollowCursor,
-            ))
-            .push(widget::tooltip(
+                    .on_press(Message::PinItem(index))
+                    .selected(entry.pinned),
+            )
+            .push(
                 widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
                     .on_press(Message::DeleteItem(index)),
-                widget::text(fl!("action-delete")),
-                widget::tooltip::Position::FollowCursor,
-            ))
+            )
             .spacing(0);
 
         let row = widget::row::with_capacity(3)

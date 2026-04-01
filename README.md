@@ -5,36 +5,37 @@ A clipboard manager for the [COSMIC™](https://system76.com/cosmic) desktop, bu
 ## Features
 
 - Text and image clipboard history
-- Persistent history across sessions (`~/.local/share/clip_pop/`)
+- Persistent history across sessions (SQLite database)
+- Fuzzy search powered by [nucleo](https://github.com/helix-editor/nucleo)
+- Full MIME type support — text, images, and more
 - Pin items to keep them at the top permanently
-- Private mode — pause recording without clearing history
-- Search and filter history instantly
+- Private mode — pause recording without clearing history (persisted across restarts)
 - Active item indicator shows what is currently in the clipboard
 - Confirm dialog before clearing history (pinned items are always kept)
-- Configurable history size and poll interval via COSMIC Settings
+- Configurable history size and preview length
 
 ## Requirements
 
 - Pop!_OS with COSMIC desktop, or any Linux distribution running COSMIC
 - Wayland compositor with `zwlr_data_control` or `ext-data-control` protocol support
 
-## Building
+## Building from source
 
-Install dependencies:
+> **Note:** A local `cosmic-text` clone is required due to a version conflict in libcosmic's dependency tree. This will be removed once libcosmic pins its own `cosmic-text` version.
 
 ```sh
+# 1. Clone cosmic-text at the required commit (sibling of this repo)
+git clone https://github.com/pop-os/cosmic-text ../cosmic-text
+git -C ../cosmic-text checkout d5a972a
+
+# 2. Install system dependencies
 sudo apt install libxkbcommon-dev libwayland-dev libvulkan-dev libdbus-1-dev libssl-dev pkg-config
-```
 
-Install the Rust toolchain via [rustup](https://rustup.rs) and [just](https://github.com/casey/just):
-
-```sh
+# 3. Install Rust toolchain and just
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install just
-```
 
-Build and run:
-
-```sh
+# 4. Build and run
 just run
 ```
 
@@ -45,17 +46,21 @@ just build-release
 sudo just install
 ```
 
-This installs the binary to `/usr/bin/clip_pop`, the `.desktop` entry, appstream metadata, and the app icon.
+Installs to `/usr/bin/clip_pop`, `/usr/share/applications/`, `/usr/share/icons/`, and `/usr/share/appdata/`.
 
-To install to a custom prefix:
+For a custom prefix:
 
 ```sh
 just rootdir=~/.local prefix='' install
 ```
 
-## Packaging
+For development (no sudo, installs icon only):
 
-Vendor dependencies for offline/reproducible builds:
+```sh
+just dev-install
+```
+
+## Packaging
 
 ```sh
 just vendor
@@ -65,26 +70,25 @@ just rootdir=debian/clip_pop prefix=/usr install
 
 ## Configuration
 
-Clip Pop uses `cosmic-config` for persistent settings. The following fields are configurable:
+Clip Pop uses `cosmic-config` for persistent settings. Fields are configurable via any `cosmic-config` compatible editor.
 
 | Field | Default | Description |
 |---|---|---|
 | `max_history` | 50 | Maximum unpinned entries to retain (10–500) |
-| `poll_interval_ms` | 500 | Clipboard poll interval in ms (100–5000) |
 | `preview_chars` | 100 | Characters shown in list preview (20–500) |
 | `move_to_top_on_select` | true | Move selected item to top of history |
 | `private_mode` | false | Pause clipboard recording |
+| `preferred_mime_types` | `[]` | Regex patterns for preferred MIME types |
 
 ## Data
 
 | Path | Contents |
 |---|---|
-| `~/.local/share/clip_pop/history.json` | Clipboard history (text + image metadata) |
-| `~/.local/share/clip_pop/images/` | Saved clipboard images as PNG |
+| `~/.local/share/clip_pop/history.db` | SQLite clipboard history database |
 
 ## Translations
 
-Translations use [Fluent](https://projectfluent.org/). To add a new language, copy `i18n/en/` to `i18n/<language-code>/`, rename the `.ftl` file, and translate each message. The language code should be a valid [ISO 639-1 code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
+Translations use [Fluent](https://projectfluent.org/). Copy `i18n/en/` to `i18n/<language-code>/`, rename the `.ftl` file, and translate each message. Language codes follow [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
 
 ## License
 

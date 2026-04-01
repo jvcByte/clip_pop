@@ -1,21 +1,40 @@
 # Clip Pop — Roadmap
 
-## Current version: 0.1.0
+---
+
+## Changelog
+
+### v0.2.0 (current)
+
+- **Clipboard watcher** — replaced `arboard` polling with `wl-clipboard-rs` using the `zwlr_data_control` / `ext-data-control` Wayland protocol directly. No focus requirement. Poll interval reduced to 100ms.
+- **Storage** — replaced `serde_json` flat file with SQLite via `sqlx`. History stored in `~/.local/share/clip_pop/history.db`. Images stored as raw bytes in the DB — no separate image files.
+- **Search** — replaced substring `contains()` with `nucleo` fuzzy matcher (same library used by cosmic-utils/clipboard-manager).
+- **Full MIME support** — text and image MIME types negotiated from the compositor. Priority order configurable via `preferred_mime_types` in config.
+- **Stable hashing** — replaced `DefaultHasher` (unstable across Rust versions) with `FxHasher` from `rustc-hash`.
+- **active_id** — tracks the active clipboard entry by stable DB row ID instead of array index. Survives pin/reorder operations.
+- **private_mode persisted** — toggling private mode now writes to `cosmic-config` immediately.
+- **DATA_DIR fallback** — falls back to `$HOME/.local/share` then `/tmp` instead of `.`.
+- **LICENSE** — MIT license file added.
+- **Error state** — shows a banner if the compositor doesn't support the required Wayland protocol.
+
+### v0.1.0
+
+- Initial release — text and image clipboard history, pin items, private mode, search, confirm clear, active item indicator, persistent JSON storage.
 
 ---
 
 ## Comparison: cosmic-utils/clipboard-manager
 
 [cosmic-utils/clipboard-manager](https://github.com/cosmic-utils/clipboard-manager) is the reference
-COSMIC clipboard applet. Key differences inform what Clip Pop should improve.
+COSMIC clipboard applet. Updated comparison after v0.2.0:
 
-| | Clip Pop | cosmic-utils/clipboard-manager |
+| | Clip Pop v0.2.0 | cosmic-utils/clipboard-manager |
 |---|---|---|
 | Type | Standalone window | COSMIC panel applet |
-| Clipboard watching | `arboard` polling (500ms) | Event-driven `zwlr_data_control` via `cctk` |
-| Storage | `serde_json` flat file | SQLite via `sqlx` |
-| Search | Substring `contains()` | `nucleo` fuzzy search |
-| MIME support | Text + PNG image only | Full MIME negotiation (HTML, RTF, files, etc.) |
+| Clipboard watching | `wl-clipboard-rs` 100ms poll | Event-driven `zwlr_data_control` via `cctk` |
+| Storage | SQLite via `sqlx` | SQLite via `sqlx` |
+| Search | `nucleo` fuzzy search | `nucleo` fuzzy search |
+| MIME support | text/*, image/* | Full MIME negotiation |
 | Entry expiry | None | Configurable lifetime (days) |
 | Pagination | None | Configurable entries per page |
 | Tests | None | SQLite layer has unit tests |
@@ -24,16 +43,11 @@ COSMIC clipboard applet. Key differences inform what Clip Pop should improve.
 | Private mode UI toggle | Yes | Config only |
 | Confirm before clear | Yes | No |
 
-**Biggest technical gap:** their clipboard watcher is event-driven using the
-`zwlr_data_control` Wayland protocol directly — no polling, no missed events,
-full MIME type support. Clip Pop's arboard polling is functional but less
-efficient and limited to text and PNG.
+**Remaining gap:** their watcher is fully event-driven (zero polling) using `cctk` and a custom Wayland dispatch loop. Clip Pop still polls at 100ms. This is the primary remaining technical difference.
 
 ---
 
 ## Blockers for v1.0.0
-
-These must be resolved before a stable release.
 
 ---
 
@@ -47,232 +61,57 @@ cosmic-text = { path = "../cosmic-text" }
 ```
 
 Anyone cloning the repo cannot build without manually cloning `cosmic-text` at
-`../cosmic-text` and checking out commit `d5a972a`. This is a build-time hard
-dependency that is invisible to contributors and CI.
+`../cosmic-text` and checking out commit `d5a972a`.
 
-**Fix:** Once libcosmic stabilises its `cosmic-text` dependency (or pins it to a
-specific rev in its own `Cargo.toml`), remove the patch entirely. Until then,
-document the manual step clearly in `README.md` and add a `setup.sh` script
-that does the clone automatically.
+**Fix:** Once libcosmic pins its own `cosmic-text` version, remove the patch. Until then, a `setup.sh` script should automate the clone step.
 
 ---
 
-### [BUG] private_mode resets on every restart
-
-**File:** `src/app.rs` — `Message::TogglePrivateMode`
-
-```rust
-Message::TogglePrivateMode => {
-    self.config.private_mode = !self.config.private_mode;
-}
-```
-
-The flag is toggled in memory but never written back to `cosmic-config`, so it
-is lost on restart.
-
-**Fix:** Persist the change via `cosmic_config::Config`:
-
-```rust
-Message::TogglePrivateMode => {
-    self.config.private_mode = !self.config.private_mode;
-    if let Ok(ctx) = cosmic_config::Config::new(Self::APP_ID, Config::VERSION) {
-        let _ = self.config.write_entry(&ctx);
-    }
-}
-```
-
----
-
-### [BUG] active_index for images is approximate
-
-**File:** `src/app.rs` — `Message::ClipboardChanged` image branch
-
-```rust
-self.active_index = Some(
-    self.history.entries().iter()
-        .position(|e| e.kind.is_image())
-        .unwrap_or(0),
-);
-```
-
-This finds the *first* image in history, not the one just added. If there are
-multiple images, the indicator dot will point to the wrong entry.
-
-**Fix:** `push_image` should return the index of the inserted entry alongside
-the path, so the caller can set `active_index` precisely.
-
----
-
-### [BUG] DATA_DIR_FALLBACK writes to current working directory
-
-**File:** `src/config.rs`
-
-```rust
-pub const DATA_DIR_FALLBACK: &str = ".";
-```
-
-If `dirs::data_local_dir()` returns `None`, history is written to wherever the
-binary was launched from.
-
-**Fix:**
-
-```rust
-dirs::data_local_dir()
-    .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
-    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-    .join(DATA_DIR_NAME)
-    .join(HISTORY_FILE_NAME)
-```
-
----
-
-### [BUG] DefaultHasher is not stable across Rust versions
-
-**File:** `src/app.rs` — `content_hash()`, `src/history.rs` — `simple_hash()`
-
-`std::collections::hash_map::DefaultHasher` output can change between Rust
-releases. A hash collision would silently drop a clipboard event or fail to
-deduplicate an image.
-
-**Fix:** Use a stable deterministic hash:
-
-```toml
-# Cargo.toml
-rustc-hash = "2"
-```
-
-```rust
-use rustc_hash::FxHasher;
-use std::hash::{Hash, Hasher};
-
-fn content_hash(data: &[u8]) -> u64 {
-    let mut h = FxHasher::default();
-    data.hash(&mut h);
-    h.finish()
-}
-```
-
----
-
-### [BUG] Image hash stored in filename — fragile dedup
-
-**File:** `src/history.rs` — `push_image()`
-
-The content hash is recovered by parsing the filename. If the file is renamed
-or the naming scheme changes, dedup silently breaks.
-
-**Fix:** Store the hash directly in `EntryKind::Image`:
-
-```rust
-pub enum EntryKind {
-    Text { content: String },
-    Image { path: PathBuf, width: u32, height: u32, content_hash: u64 },
-}
-```
-
-Note: this is a breaking change to `history.json` — bump `Config::VERSION` and
-handle migration.
-
----
-
-### [MISSING] No LICENSE file
-
-The repository declares `license = "MIT"` in `Cargo.toml` but there is no
-`LICENSE` file. Add a standard MIT `LICENSE` file.
-
----
-
-## Should-fix for v1.0.0
-
----
-
-### [FEATURE] No settings UI
+### [MISSING] No settings UI
 
 All config fields are only changeable via a third-party `cosmic-config` editor.
 
-**Fix:** Add a Settings context drawer page with controls for each `Config`
-field, writing changes back via `cosmic_config::Config`.
+**Fix:** Add a Settings context drawer page with controls for each `Config` field.
 
 ---
 
-### [FEATURE] No keyboard shortcut to open the window
+### [MISSING] No keyboard shortcut to open the window
 
-**Fix:** Register a global keybinding via COSMIC's keybinding API, or document
-how to set one in COSMIC Settings → Keyboard → Shortcuts.
-
----
-
-### [FEATURE] No way to copy without moving to top
-
-**Fix:** Add a secondary action that copies without promoting the item.
+**Fix:** Register a global keybinding via COSMIC's keybinding API, or document how to set one in COSMIC Settings → Keyboard → Shortcuts.
 
 ---
 
-## v0.3.0 — Technical improvements (informed by cosmic-utils comparison)
+## v0.3.0 — Remaining improvements
 
 ---
 
-### [IMPROVEMENT] Replace arboard polling with event-driven zwlr_data_control
+### [IMPROVEMENT] True event-driven clipboard watcher
 
-**Current:** `arboard` polls the clipboard every 500ms.
+**Current:** `wl-clipboard-rs` polled at 100ms.
 
-**Problem:** Polling misses rapid copies, wastes CPU, and is limited to text
-and PNG. arboard does not support full MIME negotiation.
+**Problem:** `wl-clipboard-rs` doesn't expose a blocking "wait for change" API, so we still poll. Rapid copies within 100ms could be missed.
 
-**Fix:** Implement a dedicated clipboard watcher using `cctk`
-(`cosmic::cctk`) and the `zwlr_data_control_v1` Wayland protocol directly,
-the same approach used by `cosmic-utils/clipboard-manager`. This gives:
-
-- Event-driven — zero polling, instant capture
-- Full MIME type support (HTML, RTF, file lists, custom types)
-- Correct handling of multiple Wayland seats
-- No dependency on arboard at all
+**Fix:** Implement a custom Wayland event loop using `wayland-client` directly (as cosmic-utils does in `clipboard_watcher.rs`), blocking on `dispatch()` until a `Selection` event fires. Zero polling, instant capture.
 
 Reference: [`src/clipboard_watcher.rs`](https://github.com/cosmic-utils/clipboard-manager/blob/master/src/clipboard_watcher.rs)
-in cosmic-utils/clipboard-manager.
 
 ---
 
-### [IMPROVEMENT] Replace serde_json flat file with SQLite
+### [IMPROVEMENT] Entry lifetime expiry
 
-**Current:** History is a single JSON array written on every change.
-
-**Problem:** Slow on large histories, no querying, no entry expiry, no
-pagination, no atomic writes.
-
-**Fix:** Use `sqlx` with SQLite (same as cosmic-utils/clipboard-manager):
-
-- Atomic writes
-- Entry lifetime expiry (e.g. auto-delete entries older than 30 days)
-- Pagination for large histories
-- Proper indexing for fast search
+Auto-delete entries older than a configurable number of days (e.g. 30).
 
 ---
 
-### [IMPROVEMENT] Replace substring search with fuzzy search
+### [IMPROVEMENT] Pagination
 
-**Current:** `e.kind.dedup_key().to_lowercase().contains(&query)`
-
-**Fix:** Use `nucleo` (same as cosmic-utils/clipboard-manager) for fuzzy
-matching. Significantly better UX when searching long histories.
-
-```toml
-nucleo = "0.5"
-```
+For large histories, paginate the list instead of rendering all entries at once.
 
 ---
 
-### [IMPROVEMENT] Full MIME type support
+### [IMPROVEMENT] Unit tests for the DB layer
 
-**Current:** Only text (`get_text()`) and PNG images (`get_image()`) are
-captured.
-
-**Fix:** With the `zwlr_data_control` watcher, negotiate MIME types and store
-the preferred type per entry. Support at minimum:
-- `text/plain`
-- `text/html`
-- `image/png`, `image/jpeg`, `image/webp`
-- `text/uri-list` (file paths)
+Add tests for `db.rs` — insert, dedup, promote, pin, clear, trim.
 
 ---
 
@@ -282,9 +121,9 @@ the preferred type per entry. Support at minimum:
 - Regex search mode
 - Auto-clear history on interval
 - Exclude specific apps from being recorded
-- Keyboard navigation within the list (arrow keys, Enter to select)
+- Keyboard navigation (arrow keys, Enter to select)
 - Primary selection support
-- QR code generation for selected text (libcosmic has `qr_code` feature)
+- QR code generation for selected text
 - Export / import history
 
 ---
@@ -293,7 +132,7 @@ the preferred type per entry. Support at minimum:
 
 | Version | Goal |
 |---------|------|
-| 0.1.0 | Initial release — core functionality working |
-| 0.2.0 | Fix all v1.0.0 blockers, add LICENSE, settings UI |
-| 0.3.0 | Event-driven watcher, SQLite storage, fuzzy search, full MIME |
-| 1.0.0 | Stable, all blockers resolved, feature-complete |
+| 0.1.0 | Initial release |
+| 0.2.0 ✓ | SQLite, wl-clipboard-rs, nucleo, FxHash, private_mode persist |
+| 0.3.0 | True event-driven watcher, entry expiry, pagination, DB tests |
+| 1.0.0 | Settings UI, keyboard shortcut, all blockers resolved |

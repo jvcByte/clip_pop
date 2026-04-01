@@ -6,8 +6,7 @@ use crate::clipboard::{self, ClipboardEvent};
 use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
 use crate::fl;
 use crate::history::{EntryKind, HistoryStore};
-use cosmic::app::context_drawer;
-use cosmic::iced::alignment::{Horizontal, Vertical};
+use cosmic::app::context_drawer;use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};
 use cosmic::prelude::*;
@@ -327,12 +326,17 @@ impl cosmic::Application for AppModel {
                         }
                         EntryKind::Image { path, width, height } => {
                             let (path, w, h) = (path.clone(), *width, *height);
-                            if let Ok(rgba) = std::fs::read(&path) {
-                                if let Err(e) = clipboard::set_image(&rgba, w, h) {
-                                    error!("failed to set clipboard image: {e}");
-                                } else {
-                                    self.active_index = Some(i);
+                            // Decode PNG back to raw RGBA pixels
+                            match image::open(&path) {
+                                Ok(img) => {
+                                    let rgba = img.to_rgba8().into_raw();
+                                    if let Err(e) = clipboard::set_image(&rgba, w, h) {
+                                        error!("failed to set clipboard image: {e}");
+                                    } else {
+                                        self.active_index = Some(i);
+                                    }
                                 }
+                                Err(e) => error!("failed to decode image for clipboard: {e}"),
                             }
                         }
                     }

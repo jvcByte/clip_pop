@@ -60,6 +60,12 @@ check-json: (check '--message-format=json')
 run *args:
     env RUST_BACKTRACE=full cargo run --release {{args}}
 
+# Installs icon and desktop entry to user dirs for development (no sudo needed)
+dev-install:
+    mkdir -p ~/.local/share/icons/hicolor/scalable/apps
+    cp {{ 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'icon.svg' }} ~/.local/share/icons/hicolor/scalable/apps/{{icon-svg}}
+    gtk-update-icon-cache ~/.local/share/icons/hicolor/ || true
+
 # Installs files
 install:
     install -Dm0755 {{ cargo-target-dir / 'release' / name }} {{bin-dst}}

@@ -6,8 +6,7 @@ use crate::clipboard::{self, ClipboardEvent};
 use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
 use crate::fl;
 use crate::history::{EntryKind, HistoryStore};
-use cosmic::app::context_drawer;use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Length, Subscription};
+use cosmic::app::context_drawer;use cosmic::iced::alignment::{Horizontal, Vertical};use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};
 use cosmic::prelude::*;
 use std::collections::HashMap;
@@ -28,6 +27,9 @@ pub struct AppModel {
     active_index: Option<usize>,
     /// Show confirm-clear dialog.
     show_confirm_clear: bool,
+    /// Hash of content we just set ourselves — suppresses the next
+    /// matching clipboard event to prevent duplicate entries.
+    suppress_next: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +94,7 @@ impl cosmic::Application for AppModel {
             search_query: String::new(),
             active_index: None,
             show_confirm_clear: false,
+            suppress_next: None,
         };
 
         let command = app.update_title();
@@ -283,6 +286,12 @@ impl cosmic::Application for AppModel {
             Message::ClipboardChanged(event) => {
                 match event {
                     ClipboardEvent::Text(text) => {
+                        let hash = content_hash(text.as_bytes());
+                        if self.suppress_next == Some(hash) {
+                            self.suppress_next = None;
+                            return Task::none();
+                        }
+                        self.suppress_next = None;
                         self.history.push_text(text.clone());
                         self.active_index =
                             self.history.entries().iter().position(|e| {
@@ -290,6 +299,12 @@ impl cosmic::Application for AppModel {
                             });
                     }
                     ClipboardEvent::Image { rgba, width, height } => {
+                        let hash = content_hash(&rgba);
+                        if self.suppress_next == Some(hash) {
+                            self.suppress_next = None;
+                            return Task::none();
+                        }
+                        self.suppress_next = None;
                         if let Some(_path) = self.history.push_image(&rgba, width, height) {
                             self.active_index = Some(
                                 self.history
@@ -301,6 +316,7 @@ impl cosmic::Application for AppModel {
                         }
                     }
                     ClipboardEvent::Cleared => {
+                        self.suppress_next = None;
                         self.active_index = None;
                     }
                 }
@@ -316,8 +332,10 @@ impl cosmic::Application for AppModel {
                     match &entry.kind {
                         EntryKind::Text { content } => {
                             let content = content.clone();
+                            self.suppress_next = Some(content_hash(content.as_bytes()));
                             if let Err(e) = clipboard::set_text(&content) {
                                 error!("failed to set clipboard text: {e}");
+                                self.suppress_next = None;
                             } else {
                                 self.active_index = self.history.entries().iter().position(|e| {
                                     matches!(&e.kind, EntryKind::Text { content: c } if c == &content)
@@ -330,8 +348,10 @@ impl cosmic::Application for AppModel {
                             match image::open(&path) {
                                 Ok(img) => {
                                     let rgba = img.to_rgba8().into_raw();
+                                    self.suppress_next = Some(content_hash(&rgba));
                                     if let Err(e) = clipboard::set_image(&rgba, w, h) {
                                         error!("failed to set clipboard image: {e}");
+                                        self.suppress_next = None;
                                     } else {
                                         self.active_index = Some(i);
                                     }
@@ -503,6 +523,19 @@ impl AppModel {
             .class(cosmic::theme::Button::MenuItem)
             .into()
     }
+}
+
+/// Fast content hash used to suppress self-triggered clipboard events.
+fn content_hash(data: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let len = data.len();
+    len.hash(&mut h);
+    data[..len.min(1024)].hash(&mut h);
+    if len > 1024 {
+        data[len.saturating_sub(1024)..].hash(&mut h);
+    }
+    h.finish()
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]

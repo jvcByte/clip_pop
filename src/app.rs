@@ -286,14 +286,13 @@ impl cosmic::Application for AppModel {
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::UpdateConfig(update.config));
 
-        // Global keyboard shortcut: Ctrl+Shift+V → focus window
+        // Global keyboard shortcut: Super+V → focus window
         let keyboard = iced_futures::keyboard::listen().filter_map(|event| {
             use cosmic::iced::keyboard::Event;
             match event {
                 Event::KeyPressed { key: Key::Character(c), modifiers, .. }
                     if c.as_str() == "v"
-                        && modifiers.contains(Modifiers::CTRL)
-                        && modifiers.contains(Modifiers::SHIFT) =>
+                        && modifiers.contains(Modifiers::LOGO) =>
                 {
                     Some(Message::KeyboardShortcut)
                 }

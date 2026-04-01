@@ -14,7 +14,7 @@ use chrono::{DateTime, Local, TimeZone};
 use rustc_hash::FxHasher;
 use sqlx::{Row, SqlitePool, sqlite::SqliteConnectOptions};
 use std::hash::{Hash, Hasher};
-use tracing::{error, warn};
+use tracing::warn;
 
 use crate::fl;
 

@@ -12,14 +12,13 @@ private-mode = Private Mode
 pinned = Pinned
 history = History
 
-# Empty states
+# Entry types
+entry-image = 🖼  Image
+
+# Empty / error states
 empty-history = Nothing here yet. Copy something to get started.
 no-results = No entries match your search.
-
-# Item actions (tooltips)
-action-pin = Pin
-action-unpin = Unpin
-action-delete = Delete
+clipboard-unavailable = Clipboard protocol unavailable. Your compositor may not support zwlr_data_control or ext_data_control.
 
 # Confirm clear dialog
 confirm-clear-title = Clear history?

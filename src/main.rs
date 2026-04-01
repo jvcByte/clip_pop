@@ -6,10 +6,10 @@
 mod app;
 mod clipboard;
 mod config;
-mod history;
+mod db;
 mod i18n;
 
-use config::{DEFAULT_LOG_LEVEL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, WINDOW_WIDTH, WINDOW_HEIGHT};
+use config::{DEFAULT_LOG_LEVEL, WINDOW_HEIGHT, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, WINDOW_WIDTH};
 
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt()

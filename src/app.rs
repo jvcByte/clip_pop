@@ -2,16 +2,18 @@
 
 //! Application model, view, and update logic.
 
-use crate::clipboard::{self, ClipboardEvent};
-use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
+use crate::clipboard::{self, ClipboardEvent, fx_hash};
+use crate::config::{self, Config, DATA_DIR_NAME, DB_FILE_NAME, PRIVATE_MODE};
+use crate::db::{Db, fuzzy_search};
 use crate::fl;
-use crate::history::{EntryKind, HistoryStore};
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};
 use cosmic::prelude::*;
+use futures::executor::block_on;
 use std::collections::HashMap;
+use std::sync::atomic;
 use tracing::error;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -23,20 +25,22 @@ pub struct AppModel {
     about: About,
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     config: Config,
-    history: HistoryStore,
+    config_ctx: cosmic::cosmic_config::Config,
+    db: Db,
     search_query: String,
-    /// Index of the item currently in the system clipboard.
-    active_index: Option<usize>,
+    /// ID of the entry currently in the system clipboard.
+    active_id: Option<i64>,
     /// Show confirm-clear dialog.
     show_confirm_clear: bool,
-    /// Hash of content we just set ourselves — suppresses the next
-    /// matching clipboard event to prevent duplicate entries.
+    /// Hash of content we just set — suppresses the next matching event.
     suppress_next: Option<u64>,
+    /// Whether the clipboard protocol is available.
+    clipboard_available: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    ClipboardChanged(ClipboardEvent),
+    ClipboardEvent(ClipboardEvent),
     SelectItem(usize),
     PinItem(usize),
     DeleteItem(usize),
@@ -70,14 +74,22 @@ impl cosmic::Application for AppModel {
         core: cosmic::Core,
         _flags: Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        let config = config::load(Self::APP_ID);
+        let (config_ctx, config) = config::load(Self::APP_ID);
 
-        let history_path = dirs::data_local_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from(DATA_DIR_FALLBACK))
+        // Sync atomic private mode flag
+        PRIVATE_MODE.store(config.private_mode, atomic::Ordering::Relaxed);
+
+        let db_path = dirs::data_local_dir()
+            .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
             .join(DATA_DIR_NAME)
-            .join(HISTORY_FILE_NAME);
+            .join(DB_FILE_NAME);
 
-        let history = HistoryStore::load(history_path, config.max_history);
+        let db = block_on(Db::open(&db_path, config.max_history))
+            .unwrap_or_else(|e| {
+                error!("failed to open db: {e}");
+                panic!("cannot open clipboard database");
+            });
 
         let about = About::default()
             .name(fl!("app-title"))
@@ -92,11 +104,13 @@ impl cosmic::Application for AppModel {
             about,
             key_binds: HashMap::new(),
             config,
-            history,
+            config_ctx,
+            db,
             search_query: String::new(),
-            active_index: None,
+            active_id: None,
             show_confirm_clear: false,
             suppress_next: None,
+            clipboard_available: true,
         };
 
         let command = app.update_title();
@@ -115,7 +129,6 @@ impl cosmic::Application for AppModel {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        // Private mode toggle in the header
         let icon_name = if self.config.private_mode {
             "security-high-symbolic"
         } else {
@@ -146,7 +159,6 @@ impl cosmic::Application for AppModel {
         if !self.show_confirm_clear {
             return None;
         }
-
         let dialog = widget::dialog()
             .title(fl!("confirm-clear-title"))
             .body(fl!("confirm-clear-body"))
@@ -158,14 +170,32 @@ impl cosmic::Application for AppModel {
                 widget::button::text(fl!("confirm-clear-cancel"))
                     .on_press(Message::CancelClearAll),
             );
-
         Some(dialog.into())
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
         let spacing = cosmic::theme::spacing();
 
-        // ── Search bar ────────────────────────────────────────────────────────
+        // ── Clipboard unavailable banner ──────────────────────────────────────
+        if !self.clipboard_available {
+            return widget::container(
+                widget::column::with_capacity(2)
+                    .push(
+                        widget::icon(widget::icon::from_name("dialog-error-symbolic").handle())
+                            .size(48),
+                    )
+                    .push(widget::text::body(fl!("clipboard-unavailable")))
+                    .spacing(spacing.space_m)
+                    .align_x(cosmic::iced::Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center)
+            .into();
+        }
+
+        // ── Search + toolbar ──────────────────────────────────────────────────
         let search = widget::search_input(fl!("search-placeholder"), &self.search_query)
             .on_input(Message::SearchChanged)
             .on_clear(Message::SearchClear)
@@ -180,19 +210,10 @@ impl cosmic::Application for AppModel {
             .spacing(spacing.space_s)
             .padding([spacing.space_xs, spacing.space_s]);
 
-        // ── Filter entries ────────────────────────────────────────────────────
-        let query = self.search_query.to_lowercase();
-        let filtered: Vec<(usize, _)> = self
-            .history
-            .entries()
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| {
-                query.is_empty() || e.kind.dedup_key().to_lowercase().contains(&query)
-            })
-            .collect();
+        // ── Filtered entries ──────────────────────────────────────────────────
+        let all_entries = self.db.entries();
+        let filtered = fuzzy_search(all_entries, &self.search_query);
 
-        // ── Empty state ───────────────────────────────────────────────────────
         let content: Element<_> = if filtered.is_empty() {
             widget::container(
                 widget::column::with_capacity(2)
@@ -214,37 +235,20 @@ impl cosmic::Application for AppModel {
             .align_y(Vertical::Center)
             .into()
         } else {
-            // Split into pinned / unpinned for rendering
             let pinned: Vec<_> = filtered.iter().filter(|(_, e)| e.pinned).collect();
             let unpinned: Vec<_> = filtered.iter().filter(|(_, e)| !e.pinned).collect();
 
             let mut col = widget::list_column().spacing(0);
 
-            // ── Pinned section ────────────────────────────────────────────────
             if !pinned.is_empty() {
-                col = col.add(
-                    widget::text::caption(fl!("pinned"))
-                        .width(Length::Fill)
-                        .apply(|t| {
-                            widget::container(t)
-                                .padding([spacing.space_xxs, spacing.space_s])
-                        }),
-                );
+                col = col.add(section_label(fl!("pinned"), cosmic::iced::Padding::ZERO));
                 for (i, entry) in &pinned {
                     col = col.add(self.history_row(*i, entry));
                 }
             }
 
-            // ── History section ───────────────────────────────────────────────
             if !unpinned.is_empty() {
-                col = col.add(
-                    widget::text::caption(fl!("history"))
-                        .width(Length::Fill)
-                        .apply(|t| {
-                            widget::container(t)
-                                .padding([spacing.space_xxs, spacing.space_s])
-                        }),
-                );
+                col = col.add(section_label(fl!("history"), cosmic::iced::Padding::ZERO));
                 for (i, entry) in &unpinned {
                     col = col.add(self.history_row(*i, entry));
                 }
@@ -270,119 +274,109 @@ impl cosmic::Application for AppModel {
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::UpdateConfig(update.config));
 
-        // Don't poll in private mode
-        if self.config.private_mode {
+        if !self.clipboard_available {
             return config_watch;
         }
 
-        let clipboard_watch =
-            clipboard::watch(self.config.poll_interval_ms).map(Message::ClipboardChanged);
+        let clipboard_watch = clipboard::watch().map(Message::ClipboardEvent);
         Subscription::batch([config_watch, clipboard_watch])
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::ClipboardChanged(event) => {
-                match event {
-                    ClipboardEvent::Text(text) => {
-                        let hash = content_hash(text.as_bytes());
-                        if self.suppress_next == Some(hash) {
-                            self.suppress_next = None;
-                            return Task::none();
-                        }
+            Message::ClipboardEvent(event) => match event {
+                ClipboardEvent::Text(text) => {
+                    let hash = fx_hash(text.as_bytes());
+                    if self.suppress_next == Some(hash) {
                         self.suppress_next = None;
-                        self.history.push_text(text.clone());
-                        self.active_index =
-                            self.history.entries().iter().position(|e| {
-                                matches!(&e.kind, EntryKind::Text { content } if content == &text)
-                            });
+                        return Task::none();
                     }
-                    ClipboardEvent::Image { rgba, width, height } => {
-                        let hash = content_hash(&rgba);
-                        if self.suppress_next == Some(hash) {
-                            self.suppress_next = None;
-                            return Task::none();
+                    self.suppress_next = None;
+                    match block_on(self.db.insert("text/plain;charset=utf-8", text.into_bytes())) {
+                        Ok(idx) => {
+                            self.active_id = self.db.get(idx).map(|e| e.id);
                         }
-                        self.suppress_next = None;
-                        if let Some(_path) = self.history.push_image(&rgba, width, height) {
-                            self.active_index = Some(
-                                self.history
-                                    .entries()
-                                    .iter()
-                                    .position(|e| e.kind.is_image())
-                                    .unwrap_or(0),
-                            );
-                        }
-                    }
-                    ClipboardEvent::Cleared => {
-                        self.suppress_next = None;
-                        self.active_index = None;
+                        Err(e) => error!("db insert text: {e}"),
                     }
                 }
-            }
+
+                ClipboardEvent::Image { data, mime_type } => {
+                    let hash = fx_hash(&data);
+                    if self.suppress_next == Some(hash) {
+                        self.suppress_next = None;
+                        return Task::none();
+                    }
+                    self.suppress_next = None;
+                    match block_on(self.db.insert(&mime_type, data)) {
+                        Ok(idx) => {
+                            self.active_id = self.db.get(idx).map(|e| e.id);
+                        }
+                        Err(e) => error!("db insert image: {e}"),
+                    }
+                }
+
+                ClipboardEvent::Cleared => {
+                    self.suppress_next = None;
+                    self.active_id = None;
+                }
+
+                ClipboardEvent::Unavailable => {
+                    self.clipboard_available = false;
+                }
+            },
 
             Message::SelectItem(i) => {
                 let entry = if self.config.move_to_top_on_select {
-                    self.history.promote(i)
+                    if let Err(e) = block_on(self.db.promote(i)) {
+                        error!("promote: {e}");
+                    }
+                    self.db.get(0)
                 } else {
-                    self.history.entries().get(i)
+                    self.db.get(i)
                 };
+
                 if let Some(entry) = entry {
-                    match &entry.kind {
-                        EntryKind::Text { content } => {
-                            let content = content.clone();
-                            self.suppress_next = Some(content_hash(content.as_bytes()));
-                            if let Err(e) = clipboard::set_text(&content) {
-                                error!("failed to set clipboard text: {e}");
-                                self.suppress_next = None;
-                            } else {
-                                self.active_index = self.history.entries().iter().position(|e| {
-                                    matches!(&e.kind, EntryKind::Text { content: c } if c == &content)
-                                });
-                            }
+                    let data = entry.content.clone();
+                    let mime = entry.mime_type.clone();
+                    let id = entry.id;
+                    let hash = fx_hash(&data);
+                    self.suppress_next = Some(hash);
+
+                    let result = if mime.starts_with("image/") {
+                        clipboard::set_image(&data, &mime)
+                    } else {
+                        match String::from_utf8(data) {
+                            Ok(text) => clipboard::set_text(&text),
+                            Err(e) => Err(e.to_string()),
                         }
-                        EntryKind::Image { path, width, height } => {
-                            let (path, w, h) = (path.clone(), *width, *height);
-                            // Decode PNG back to raw RGBA pixels
-                            match image::open(&path) {
-                                Ok(img) => {
-                                    let rgba = img.to_rgba8().into_raw();
-                                    self.suppress_next = Some(content_hash(&rgba));
-                                    if let Err(e) = clipboard::set_image(&rgba, w, h) {
-                                        error!("failed to set clipboard image: {e}");
-                                        self.suppress_next = None;
-                                    } else {
-                                        self.active_index = Some(i);
-                                    }
-                                }
-                                Err(e) => error!("failed to decode image for clipboard: {e}"),
-                            }
+                    };
+
+                    match result {
+                        Ok(()) => self.active_id = Some(id),
+                        Err(e) => {
+                            error!("set clipboard: {e}");
+                            self.suppress_next = None;
                         }
                     }
                 }
             }
 
             Message::PinItem(i) => {
-                self.history.toggle_pin(i);
-                // Recompute active index after reorder
-                let active_key = self
-                    .active_index
-                    .and_then(|idx| self.history.entries().get(idx))
-                    .map(|e| e.kind.dedup_key());
-                if let Some(key) = active_key {
-                    self.active_index = self
-                        .history
-                        .entries()
-                        .iter()
-                        .position(|e| e.kind.dedup_key() == key);
+                let active_id = self.active_id;
+                if let Err(e) = block_on(self.db.toggle_pin(i)) {
+                    error!("toggle pin: {e}");
                 }
+                // Recompute active_id position after reorder (id is stable)
+                self.active_id = active_id;
             }
 
             Message::DeleteItem(i) => {
-                if self.active_index == Some(i) {
-                    self.active_index = None;
+                if self.db.get(i).map(|e| e.id) == self.active_id {
+                    self.active_id = None;
                 }
-                self.history.remove(i);
+                if let Err(e) = block_on(self.db.remove(i)) {
+                    error!("remove: {e}");
+                }
             }
 
             Message::RequestClearAll => {
@@ -391,8 +385,10 @@ impl cosmic::Application for AppModel {
 
             Message::ConfirmClearAll => {
                 self.show_confirm_clear = false;
-                self.history.clear_unpinned();
-                self.active_index = None;
+                if let Err(e) = block_on(self.db.clear_unpinned()) {
+                    error!("clear: {e}");
+                }
+                self.active_id = None;
             }
 
             Message::CancelClearAll => {
@@ -401,6 +397,11 @@ impl cosmic::Application for AppModel {
 
             Message::TogglePrivateMode => {
                 self.config.private_mode = !self.config.private_mode;
+                PRIVATE_MODE.store(self.config.private_mode, atomic::Ordering::Relaxed);
+                // Persist to cosmic-config
+                if let Err(e) = self.config.set_private_mode(&self.config_ctx, self.config.private_mode) {
+                    error!("failed to persist private_mode: {e}");
+                }
             }
 
             Message::SearchChanged(query) => {
@@ -413,7 +414,8 @@ impl cosmic::Application for AppModel {
 
             Message::UpdateConfig(config) => {
                 let config = config.validated();
-                self.history.set_max(config.max_history);
+                PRIVATE_MODE.store(config.private_mode, atomic::Ordering::Relaxed);
+                self.db.set_max(config.max_history);
                 self.config = config;
             }
 
@@ -428,7 +430,7 @@ impl cosmic::Application for AppModel {
 
             Message::LaunchUrl(url) => {
                 if let Err(e) = open::that_detached(&url) {
-                    error!("failed to open url {url:?}: {e}");
+                    error!("open url {url:?}: {e}");
                 }
             }
         }
@@ -447,62 +449,51 @@ impl AppModel {
         }
     }
 
-    /// Build a single history row element.
     fn history_row<'a>(
         &'a self,
         index: usize,
-        entry: &'a crate::history::ClipEntry,
+        entry: &'a crate::db::ClipEntry,
     ) -> Element<'a, Message> {
         let spacing = cosmic::theme::spacing();
-        let is_active = self.active_index == Some(index);
+        let is_active = self.active_id == Some(entry.id);
 
-        // ── Active indicator ──────────────────────────────────────────────────
         let indicator: Element<_> = if is_active {
             widget::icon(widget::icon::from_name("media-record-symbolic").handle())
                 .size(8)
                 .into()
         } else {
-            widget::container(widget::Space::new())
-                .width(8)
+            widget::container(widget::Space::new()).width(8).into()
+        };
+
+        let content_area: Element<_> = if entry.is_image() {
+            // Decode image bytes for thumbnail
+            let handle = widget::image::Handle::from_bytes(entry.content.clone());
+            widget::column::with_capacity(2)
+                .push(
+                    widget::image(handle)
+                        .width(Length::Fixed(120.0))
+                        .height(Length::Fixed(68.0))
+                        .content_fit(cosmic::iced::ContentFit::Cover),
+                )
+                .push(widget::text::caption(entry.relative_time_i18n()))
+                .spacing(spacing.space_xxxs)
+                .width(Length::Fill)
                 .into()
-        };
-
-        // ── Content area ──────────────────────────────────────────────────────
-        let content_area: Element<_> = match &entry.kind {
-            EntryKind::Text { .. } => {
-                widget::column::with_capacity(2)
-                    .push(widget::text::body(entry.preview(self.config.preview_chars)).width(Length::Fill))
-                    .push(widget::text::caption(entry.relative_time_i18n()))
-                    .spacing(spacing.space_xxxs)
-                    .width(Length::Fill)
-                    .into()
-            }
-            EntryKind::Image { path, .. } => {
-                widget::column::with_capacity(3)
-                    .push(
-                        widget::image(widget::image::Handle::from_path(path))
-                            .width(Length::Fixed(120.0))
-                            .height(Length::Fixed(68.0))
-                            .content_fit(cosmic::iced::ContentFit::Cover),
-                    )
-                    .push(widget::text::caption(entry.preview(self.config.preview_chars)))
-                    .push(widget::text::caption(entry.relative_time_i18n()))
-                    .spacing(spacing.space_xxxs)
-                    .width(Length::Fill)
-                    .into()
-            }
-        };
-
-        // ── Action buttons ────────────────────────────────────────────────────
-        let pin_icon = if entry.pinned {
-            "pin-symbolic"  // filled = pinned
         } else {
-            "pin-symbolic"  // same icon, dimmed by button style when unpinned
+            widget::column::with_capacity(2)
+                .push(
+                    widget::text::body(entry.preview(self.config.preview_chars))
+                        .width(Length::Fill),
+                )
+                .push(widget::text::caption(entry.relative_time_i18n()))
+                .spacing(spacing.space_xxxs)
+                .width(Length::Fill)
+                .into()
         };
 
         let actions = widget::row::with_capacity(2)
             .push(
-                widget::button::icon(widget::icon::from_name(pin_icon))
+                widget::button::icon(widget::icon::from_name("pin-symbolic"))
                     .on_press(Message::PinItem(index))
                     .selected(entry.pinned),
             )
@@ -528,17 +519,15 @@ impl AppModel {
     }
 }
 
-/// Fast content hash used to suppress self-triggered clipboard events.
-fn content_hash(data: &[u8]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    let len = data.len();
-    len.hash(&mut h);
-    data[..len.min(1024)].hash(&mut h);
-    if len > 1024 {
-        data[len.saturating_sub(1024)..].hash(&mut h);
-    }
-    h.finish()
+fn section_label<'a, M: 'a>(
+    label: String,
+    spacing: cosmic::iced::Padding,
+) -> impl Into<Element<'a, M>> {
+    let _ = spacing;
+    let spacing = cosmic::theme::spacing();
+    widget::text::caption(label)
+        .width(Length::Fill)
+        .apply(|t| widget::container(t).padding([spacing.space_xxs, spacing.space_s]))
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]

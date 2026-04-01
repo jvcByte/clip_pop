@@ -10,55 +10,44 @@ repository = "https://github.com/jvcByte/clip_pop"
 app-id = "com.github.jvcByte.clip_pop"
 
 [dependencies]
-arboard = { version = "3", features = ["wayland-data-control"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
-futures-util = "0.3.31"
+futures = "0.3"
+futures-util = "0.3"
 i18n-embed = { version = "0.16", features = [
     "fluent-system",
     "desktop-requester",
 ] }
 i18n-embed-fl = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+itertools = "0.14"
+mime = "0.3"
+nucleo = "0.5"
 open = "5.3.2"
+regex = "1"
 rust-embed = "8.8.0"
+rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1.48.0", features = ["full"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wl-clipboard-rs = "0.9"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
-# See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.
 features = [
-    # Accessibility support
     "a11y",
-    # About widget for the app
     "about",
-    # Uses cosmic-settings-daemon to watch for config file changes
     "dbus-config",
-    # Support creating additional application windows.
     "multi-window",
-    # On app startup, focuses an existing instance if the app is already open
     "single-instance",
-    # Uses tokio as the executor for the runtime
     "tokio",
-    # Windowing support for X11, Windows, Mac, & Redox
     "winit",
-    # Add Wayland support to winit
     "wayland",
-    # GPU-accelerated rendering
     "wgpu",
 ]
 
-# Uncomment to test a locally-cloned libcosmic
-# [patch.'https://github.com/pop-os/libcosmic']
-# libcosmic = { path = "../libcosmic" }
-# cosmic-config = { path = "../libcosmic/cosmic-config" }
-# cosmic-theme = { path = "../libcosmic/cosmic-theme" }
-
-# Pin cosmic-text to the exact commit that libcosmic's vendored iced expects.
-# Without this, Cargo resolves a newer incompatible HEAD.
 [patch.'https://github.com/pop-os/cosmic-text']
 cosmic-text = { path = "../cosmic-text" }

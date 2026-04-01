@@ -21,21 +21,15 @@ A clipboard manager for the [COSMIC™](https://system76.com/cosmic) desktop, bu
 
 ## Building from source
 
-> **Note:** A local `cosmic-text` clone is required due to a version conflict in libcosmic's dependency tree. This will be removed once libcosmic pins its own `cosmic-text` version.
-
 ```sh
-# 1. Clone cosmic-text at the required commit (sibling of this repo)
-git clone https://github.com/pop-os/cosmic-text ../cosmic-text
-git -C ../cosmic-text checkout d5a972a
-
-# 2. Install system dependencies
+# 1. Install system dependencies
 sudo apt install libxkbcommon-dev libwayland-dev libvulkan-dev libdbus-1-dev libssl-dev pkg-config
 
-# 3. Install Rust toolchain and just
+# 2. Install Rust toolchain and just
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install just
 
-# 4. Build and run
+# 3. Build and run
 just run
 ```
 

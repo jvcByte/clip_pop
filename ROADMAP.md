@@ -36,19 +36,6 @@ The primary remaining technical difference is MIME breadth — cosmic-utils nego
 
 ---
 
-### [BUG] cosmic-text patch requires a local sibling directory
-
-**File:** `Cargo.toml`
-
-```toml
-[patch.'https://github.com/pop-os/cosmic-text']
-cosmic-text = { path = "../cosmic-text" }
-```
-
-Anyone cloning the repo cannot build without manually cloning `cosmic-text` at `../cosmic-text` and checking out commit `d5a972a`. Add a `setup.sh` script to automate this until libcosmic pins its own version.
-
----
-
 ### [MISSING] No settings UI
 
 All config fields are only changeable via a third-party `cosmic-config` editor.

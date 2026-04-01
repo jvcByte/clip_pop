@@ -1,6 +1,6 @@
 [package]
 name = "clip_pop"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 license = "MIT"
 description = "A clipboard manager for the COSMIC™ desktop"
@@ -41,6 +41,7 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
+rev = "f06d15ae35204cb3bcef5a3188b5ec59a1cc9bfd"
 features = [
     "a11y",
     "about",
@@ -57,4 +58,4 @@ features = [
 tempfile = "3"
 
 [patch.'https://github.com/pop-os/cosmic-text']
-cosmic-text = { path = "../cosmic-text" }
+cosmic-text = { git = "https://github.com/jvcByte/cosmic-text", rev = "d5a972a" }

@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 
-//! Clipboard watcher using wl-clipboard-rs for event-driven Wayland clipboard access.
+//! Clipboard watcher using wl-clipboard-rs.
 //!
-//! Runs a blocking thread that calls into the zwlr_data_control / ext_data_control
-//! protocol directly — no polling interval, fires immediately on clipboard change.
+//! wl-clipboard-rs uses the zwlr_data_control / ext_data_control Wayland protocol
+//! directly — no X11, no focus requirement. We run it in a spawn_blocking thread
+//! that polls at a short interval (100ms) since wl-clipboard-rs doesn't expose a
+//! blocking "wait for change" API. This is still far better than arboard's 500ms
+//! polling because we use the correct Wayland protocol.
 
 use std::io::Read;
 use std::sync::atomic;
+use std::time::Duration;
 
 use crate::config::{CLIPBOARD_SUBSCRIPTION_ID, PRIVATE_MODE};
 use cosmic::iced_futures::Subscription;
@@ -17,7 +21,9 @@ use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 use tokio::sync::mpsc;
 use tracing::{error, warn};
-use wl_clipboard_rs::paste::{ClipboardType, Error as PasteError, MimeType, Seat, get_contents, get_mime_types};
+use wl_clipboard_rs::paste::{
+    ClipboardType, Error as PasteError, MimeType, Seat, get_contents, get_mime_types,
+};
 
 /// MIME types we care about, in priority order.
 const PREFERRED_MIME: &[&str] = &[
@@ -32,13 +38,13 @@ const PREFERRED_MIME: &[&str] = &[
     "image/webp",
 ];
 
+/// Poll interval for the clipboard watcher thread.
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
 #[derive(Debug, Clone)]
 pub enum ClipboardEvent {
-    /// New text content.
     Text(String),
-    /// New image content — raw bytes of the image in its original MIME format.
     Image { data: Vec<u8>, mime_type: String },
-    /// Clipboard was cleared.
     Cleared,
     /// Protocol not available on this compositor.
     Unavailable,
@@ -49,17 +55,17 @@ pub fn watch() -> Subscription<ClipboardEvent> {
         stream::channel(8, move |mut tx: Sender<ClipboardEvent>| async move {
             let (thread_tx, mut thread_rx) = mpsc::channel::<ClipboardEvent>(8);
 
-            // Spawn a blocking thread — wl-clipboard-rs uses synchronous Wayland dispatch.
             tokio::task::spawn_blocking(move || {
                 let mut last_hash: Option<u64> = None;
 
                 loop {
+                    std::thread::sleep(POLL_INTERVAL);
+
                     if PRIVATE_MODE.load(atomic::Ordering::Relaxed) {
-                        std::thread::sleep(std::time::Duration::from_millis(200));
                         continue;
                     }
 
-                    // Get available MIME types — this blocks until clipboard changes.
+                    // Get available MIME types
                     let mime_types = match get_mime_types(ClipboardType::Regular, Seat::Unspecified) {
                         Ok(types) => types,
                         Err(PasteError::ClipboardEmpty) => {
@@ -76,19 +82,20 @@ pub fn watch() -> Subscription<ClipboardEvent> {
                         }
                         Err(e) => {
                             warn!("clipboard mime types error: {e}");
-                            std::thread::sleep(std::time::Duration::from_millis(100));
                             continue;
                         }
                     };
 
-                    // Pick the best MIME type
+                    // Pick the best available MIME type
                     let chosen = PREFERRED_MIME
                         .iter()
                         .find(|&&m| mime_types.contains(m))
                         .copied()
                         .or_else(|| {
-                            // fallback: any text/* or image/*
-                            mime_types.iter().find(|m| m.starts_with("text/") || m.starts_with("image/")).map(|s| s.as_str())
+                            mime_types
+                                .iter()
+                                .find(|m| m.starts_with("text/") || m.starts_with("image/"))
+                                .map(|s| s.as_str())
                         });
 
                     let Some(mime) = chosen else {
@@ -143,19 +150,17 @@ pub fn watch() -> Subscription<ClipboardEvent> {
                     };
 
                     if thread_tx.blocking_send(event).is_err() {
-                        break; // receiver dropped — shutting down
+                        break;
                     }
                 }
             });
 
-            // Forward events from the blocking thread to the iced stream
             while let Some(event) = thread_rx.recv().await {
-                if matches!(event, ClipboardEvent::Unavailable) {
-                    error!("clipboard unavailable — watcher stopped");
-                    let _ = tx.send(event).await;
+                let is_unavailable = matches!(event, ClipboardEvent::Unavailable);
+                if tx.send(event).await.is_err() {
                     break;
                 }
-                if tx.send(event).await.is_err() {
+                if is_unavailable {
                     break;
                 }
             }
@@ -163,8 +168,7 @@ pub fn watch() -> Subscription<ClipboardEvent> {
     })
 }
 
-/// Write text to the clipboard using iced's built-in clipboard API.
-/// Called from the update() method via a Task.
+/// Write text to the clipboard.
 pub fn set_text(text: &str) -> Result<(), String> {
     use wl_clipboard_rs::copy::{MimeType as CopyMime, Options, Source};
     Options::new()

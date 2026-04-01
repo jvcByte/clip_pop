@@ -491,7 +491,8 @@ impl AppModel {
             widget::column::with_capacity(2)
                 .push(
                     widget::text::body(entry.preview(self.config.preview_chars))
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph),
                 )
                 .push(widget::text::caption(entry.relative_time_i18n()))
                 .spacing(spacing.space_xxxs)

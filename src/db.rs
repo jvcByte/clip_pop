@@ -92,8 +92,7 @@ pub struct Db {
 
 impl Db {
     /// Open (or create) the SQLite database at `path`.
-    pub async fn open(path: &Path, max: usize) -> Result<Self> {
-        if let Some(parent) = path.parent() {
+    pub async fn open(path: &Path, max: usize) -> Result<Self> {        if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await
                 .context("failed to create db directory")?;
         }
@@ -272,6 +271,22 @@ impl Db {
         self.max = max;
     }
 
+    /// Delete unpinned entries older than `days` days.
+    pub async fn expire_older_than(&mut self, days: u64) -> Result<()> {
+        let cutoff = chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::days(days as i64))
+            .map(|t| t.timestamp_millis())
+            .unwrap_or(0);
+
+        sqlx::query("DELETE FROM entries WHERE pinned = 0 AND created_at < ?")
+            .bind(cutoff)
+            .execute(&self.pool)
+            .await
+            .context("failed to expire old entries")?;
+
+        self.reload().await
+    }
+
     async fn trim_unpinned(&mut self) -> Result<()> {
         sqlx::query(
             "DELETE FROM entries WHERE pinned = 0 AND id NOT IN (
@@ -315,4 +330,92 @@ pub fn fuzzy_search<'a>(entries: &'a [ClipEntry], query: &str) -> Vec<(usize, &'
                 .map(|_score| (i, entry))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    async fn test_db() -> Db {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.db");
+        // Keep dir alive by leaking it — fine for tests
+        std::mem::forget(dir);
+        Db::open(&path, 10).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn insert_and_retrieve() {
+        let mut db = test_db().await;
+        db.insert("text/plain", b"hello world".to_vec()).await.unwrap();
+        assert_eq!(db.len(), 1);
+        assert_eq!(db.get(0).unwrap().content, b"hello world");
+    }
+
+    #[tokio::test]
+    async fn deduplication() {
+        let mut db = test_db().await;
+        db.insert("text/plain", b"hello".to_vec()).await.unwrap();
+        db.insert("text/plain", b"world".to_vec()).await.unwrap();
+        db.insert("text/plain", b"hello".to_vec()).await.unwrap(); // duplicate
+        assert_eq!(db.len(), 2);
+        // "hello" should be at the top after re-insert
+        assert_eq!(db.get(0).unwrap().content, b"hello");
+    }
+
+    #[tokio::test]
+    async fn pin_survives_clear() {
+        let mut db = test_db().await;
+        db.insert("text/plain", b"pinned".to_vec()).await.unwrap();
+        db.insert("text/plain", b"normal".to_vec()).await.unwrap();
+        db.toggle_pin(1).await.unwrap(); // pin "pinned" (index 1 after "normal" is at 0)
+        db.clear_unpinned().await.unwrap();
+        assert_eq!(db.len(), 1);
+        assert!(db.get(0).unwrap().pinned);
+    }
+
+    #[tokio::test]
+    async fn promote_moves_to_top() {
+        let mut db = test_db().await;
+        db.insert("text/plain", b"first".to_vec()).await.unwrap();
+        db.insert("text/plain", b"second".to_vec()).await.unwrap();
+        db.insert("text/plain", b"third".to_vec()).await.unwrap();
+        // "third" is at index 0 (newest first)
+        db.promote(2).await.unwrap(); // promote "first"
+        assert_eq!(db.get(0).unwrap().content, b"first");
+    }
+
+    #[tokio::test]
+    async fn trim_respects_max() {
+        let mut db = test_db().await;
+        for i in 0..15u8 {
+            db.insert("text/plain", vec![i]).await.unwrap();
+        }
+        assert!(db.len() <= 10);
+    }
+
+    #[tokio::test]
+    async fn remove_by_index() {
+        let mut db = test_db().await;
+        db.insert("text/plain", b"a".to_vec()).await.unwrap();
+        db.insert("text/plain", b"b".to_vec()).await.unwrap();
+        db.remove(0).await.unwrap();
+        assert_eq!(db.len(), 1);
+        assert_eq!(db.get(0).unwrap().content, b"a");
+    }
+
+    #[tokio::test]
+    async fn expire_removes_old_entries() {
+        let mut db = test_db().await;
+        db.insert("text/plain", b"old".to_vec()).await.unwrap();
+        // Manually backdate the entry
+        sqlx::query("UPDATE entries SET created_at = 0")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        db.reload().await.unwrap();
+        db.expire_older_than(30).await.unwrap();
+        assert_eq!(db.len(), 0);
+    }
 }

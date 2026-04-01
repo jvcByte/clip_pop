@@ -5,6 +5,7 @@
 
 mod app;
 mod clipboard;
+mod clipboard_watcher;
 mod config;
 mod db;
 mod i18n;

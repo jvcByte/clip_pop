@@ -91,6 +91,14 @@ impl cosmic::Application for AppModel {
                 panic!("cannot open clipboard database");
             });
 
+        // Expire old entries on startup
+        let mut db = db;
+        if let Some(days) = config.entry_lifetime_days {
+            if let Err(e) = block_on(db.expire_older_than(days)) {
+                error!("failed to expire old entries: {e}");
+            }
+        }
+
         let about = About::default()
             .name(fl!("app-title"))
             .icon(widget::icon::from_svg_bytes(APP_ICON))

@@ -1,6 +1,6 @@
 [package]
 name = "clip_pop"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "A clipboard manager for the COSMIC™ desktop"
@@ -25,15 +25,19 @@ itertools = "0.14"
 mime = "0.3"
 nucleo = "0.5"
 open = "5.3.2"
+os_pipe = "1"
 regex = "1"
 rust-embed = "8.8.0"
 rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wl-clipboard-rs = "0.9"
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
@@ -48,6 +52,9 @@ features = [
     "wayland",
     "wgpu",
 ]
+
+[dev-dependencies]
+tempfile = "3"
 
 [patch.'https://github.com/pop-os/cosmic-text']
 cosmic-text = { path = "../cosmic-text" }

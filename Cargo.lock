@@ -729,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "clip_pop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -744,14 +744,19 @@ dependencies = [
  "mime 0.3.17",
  "nucleo",
  "open",
+ "os_pipe",
  "regex",
  "rust-embed",
  "rustc-hash 2.1.2",
  "serde",
  "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols-wlr",
  "wl-clipboard-rs",
 ]
 

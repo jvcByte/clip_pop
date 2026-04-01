@@ -65,6 +65,8 @@ pub struct Config {
     pub private_mode: bool,
     /// User-defined preferred MIME type patterns (regex strings).
     pub preferred_mime_types: Vec<String>,
+    /// Auto-delete unpinned entries older than this many days. None = never.
+    pub entry_lifetime_days: Option<u64>,
 }
 
 impl Default for Config {
@@ -75,6 +77,7 @@ impl Default for Config {
             move_to_top_on_select: true,
             private_mode: false,
             preferred_mime_types: Vec::new(),
+            entry_lifetime_days: Some(30),
         }
     }
 }

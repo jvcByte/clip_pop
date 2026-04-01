@@ -64,7 +64,7 @@ run *args:
 dev-install:
     mkdir -p ~/.local/share/icons/hicolor/scalable/apps
     cp {{ 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'icon.svg' }} ~/.local/share/icons/hicolor/scalable/apps/{{icon-svg}}
-    gtk-update-icon-cache ~/.local/share/icons/hicolor/ || true
+    touch ~/.local/share/icons/hicolor/index.theme || true
 
 # Installs files
 install:

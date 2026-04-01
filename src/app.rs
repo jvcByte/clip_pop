@@ -124,7 +124,7 @@ impl cosmic::Application for AppModel {
                 widget::button::icon(widget::icon::from_name(icon_name))
                     .on_press(Message::TogglePrivateMode),
                 widget::text(fl!("private-mode")),
-                widget::tooltip::Position::Bottom,
+                widget::tooltip::Position::FollowCursor,
             )
             .into(),
         ]
@@ -499,13 +499,13 @@ impl AppModel {
                 widget::button::icon(widget::icon::from_name(pin_icon))
                     .on_press(Message::PinItem(index)),
                 widget::text(pin_tooltip),
-                widget::tooltip::Position::Bottom,
+                widget::tooltip::Position::FollowCursor,
             ))
             .push(widget::tooltip(
                 widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
                     .on_press(Message::DeleteItem(index)),
                 widget::text(fl!("action-delete")),
-                widget::tooltip::Position::Bottom,
+                widget::tooltip::Position::FollowCursor,
             ))
             .spacing(0);
 

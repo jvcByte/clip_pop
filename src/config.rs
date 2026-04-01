@@ -28,6 +28,8 @@ pub const MAX_POLL_MS: u64 = 5_000;
 
 /// Maximum characters shown in a history list preview before truncation.
 pub const DEFAULT_PREVIEW_CHARS: usize = 100;
+pub const MIN_PREVIEW_CHARS: usize = 20;
+pub const MAX_PREVIEW_CHARS: usize = 500;
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
@@ -90,7 +92,7 @@ impl Config {
     pub fn validated(mut self) -> Self {
         self.max_history = self.max_history.clamp(MIN_HISTORY, MAX_HISTORY);
         self.poll_interval_ms = self.poll_interval_ms.clamp(MIN_POLL_MS, MAX_POLL_MS);
-        self.preview_chars = self.preview_chars.clamp(20, 500);
+        self.preview_chars = self.preview_chars.clamp(MIN_PREVIEW_CHARS, MAX_PREVIEW_CHARS);
         self
     }
 }

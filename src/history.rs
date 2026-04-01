@@ -134,17 +134,47 @@ impl HistoryStore {
     }
 
     /// Save raw RGBA image data as PNG and add an image entry.
-    /// Returns the saved path on success.
+    /// Deduplicates by pixel content hash — won't create a new file if
+    /// the same image is already in history. Returns the path on success.
     pub fn push_image(&mut self, rgba: &[u8], width: u32, height: u32) -> Option<PathBuf> {
+        // Deduplicate by content hash before touching disk
+        let hash = simple_hash(rgba);
+        if let Some(existing) = self.entries.iter().find(|e| {
+            matches!(&e.kind, EntryKind::Image { path, .. } if {
+                // Compare stored hash tag in filename (format: <hash>_<timestamp>.png)
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .and_then(|s| s.split('_').next())
+                    .and_then(|h| h.parse::<u64>().ok())
+                    == Some(hash)
+            })
+        }) {
+            // Already exists — just promote it
+            let key = existing.kind.dedup_key();
+            if let Some(idx) = self.entries.iter().position(|e| e.kind.dedup_key() == key) {
+                return self.promote(idx).map(|e| {
+                    if let EntryKind::Image { path, .. } = &e.kind {
+                        path.clone()
+                    } else {
+                        unreachable!()
+                    }
+                });
+            }
+        }
+
         if let Err(e) = fs::create_dir_all(&self.images_dir) {
             error!("failed to create images dir: {e}");
             return None;
         }
 
-        let filename = format!("{}.png", Local::now().format("%Y%m%d_%H%M%S_%f"));
+        // Embed hash in filename for fast dedup on next run
+        let filename = format!(
+            "{}_{}.png",
+            hash,
+            Local::now().format("%Y%m%d_%H%M%S")
+        );
         let img_path = self.images_dir.join(&filename);
 
-        // Encode RGBA → PNG
         let img = image::RgbaImage::from_raw(width, height, rgba.to_vec())?;
         if let Err(e) = img.save(&img_path) {
             error!("failed to save clipboard image: {e}");
@@ -219,8 +249,7 @@ impl HistoryStore {
         self.persist();
     }
 
-    fn first_unpinned(&self) -> usize {
-        self.entries.iter().position(|e| !e.pinned).unwrap_or(self.entries.len())
+    fn first_unpinned(&self) -> usize {        self.entries.iter().position(|e| !e.pinned).unwrap_or(self.entries.len())
     }
 
     fn trim_unpinned(&mut self) {
@@ -262,4 +291,16 @@ impl HistoryStore {
             Err(e) => error!("failed to serialize history: {e}"),
         }
     }
+}
+
+fn simple_hash(data: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let len = data.len();
+    len.hash(&mut h);
+    data[..len.min(1024)].hash(&mut h);
+    if len > 1024 {
+        data[len.saturating_sub(1024)..].hash(&mut h);
+    }
+    h.finish()
 }

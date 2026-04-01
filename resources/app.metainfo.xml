@@ -7,15 +7,19 @@
   <summary>Clipboard manager for the COSMIC™ desktop</summary>
   <description>
     <p>
-      Clip Pop is a clipboard manager built natively for the COSMIC™ desktop environment.
-      It keeps a searchable history of everything you copy, lets you re-paste any previous
-      entry with a single click, and persists your history across reboots.
+      Clip Pop is a clipboard manager built natively for the COSMIC™ desktop environment
+      using libcosmic and Rust. It monitors your clipboard in the background and keeps a
+      persistent, searchable history of everything you copy — text and images.
     </p>
     <ul>
-      <li>Searchable clipboard history</li>
+      <li>Text and image clipboard history</li>
       <li>Persistent history across sessions</li>
+      <li>Pin items to keep them at the top permanently</li>
+      <li>Private mode to pause recording</li>
+      <li>Search and filter history instantly</li>
+      <li>Active item indicator shows what is currently in the clipboard</li>
+      <li>Confirm before clearing history — pinned items are always kept</li>
       <li>Configurable history size and poll interval</li>
-      <li>Delete individual entries or clear all at once</li>
     </ul>
   </description>
   <url type="homepage">https://github.com/jvcByte/clip_pop</url>
@@ -44,7 +48,7 @@
   </keywords>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="0.1.0" date="2026-03-31">
+    <release version="0.1.0" date="2026-04-01">
       <description>
         <p>Initial release.</p>
       </description>

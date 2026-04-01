@@ -4,6 +4,33 @@
 
 ---
 
+## Comparison: cosmic-utils/clipboard-manager
+
+[cosmic-utils/clipboard-manager](https://github.com/cosmic-utils/clipboard-manager) is the reference
+COSMIC clipboard applet. Key differences inform what Clip Pop should improve.
+
+| | Clip Pop | cosmic-utils/clipboard-manager |
+|---|---|---|
+| Type | Standalone window | COSMIC panel applet |
+| Clipboard watching | `arboard` polling (500ms) | Event-driven `zwlr_data_control` via `cctk` |
+| Storage | `serde_json` flat file | SQLite via `sqlx` |
+| Search | Substring `contains()` | `nucleo` fuzzy search |
+| MIME support | Text + PNG image only | Full MIME negotiation (HTML, RTF, files, etc.) |
+| Entry expiry | None | Configurable lifetime (days) |
+| Pagination | None | Configurable entries per page |
+| Tests | None | SQLite layer has unit tests |
+| Pin items | Yes | No |
+| Active item indicator | Yes | No |
+| Private mode UI toggle | Yes | Config only |
+| Confirm before clear | Yes | No |
+
+**Biggest technical gap:** their clipboard watcher is event-driven using the
+`zwlr_data_control` Wayland protocol directly — no polling, no missed events,
+full MIME type support. Clip Pop's arboard polling is functional but less
+efficient and limited to text and PNG.
+
+---
+
 ## Blockers for v1.0.0
 
 These must be resolved before a stable release.
@@ -25,8 +52,8 @@ dependency that is invisible to contributors and CI.
 
 **Fix:** Once libcosmic stabilises its `cosmic-text` dependency (or pins it to a
 specific rev in its own `Cargo.toml`), remove the patch entirely. Until then,
-document the manual step clearly in `README.md` and consider adding a
-`setup.sh` script that does the clone automatically.
+document the manual step clearly in `README.md` and add a `setup.sh` script
+that does the clone automatically.
 
 ---
 
@@ -71,8 +98,8 @@ self.active_index = Some(
 This finds the *first* image in history, not the one just added. If there are
 multiple images, the indicator dot will point to the wrong entry.
 
-**Fix:** `push_image` should return the index of the inserted entry, or
-`HistoryStore` should expose a method that returns the index alongside the path.
+**Fix:** `push_image` should return the index of the inserted entry alongside
+the path, so the caller can set `active_index` precisely.
 
 ---
 
@@ -84,10 +111,10 @@ multiple images, the indicator dot will point to the wrong entry.
 pub const DATA_DIR_FALLBACK: &str = ".";
 ```
 
-If `dirs::data_local_dir()` returns `None` (rare but possible in minimal
-environments), history is written to wherever the binary was launched from.
+If `dirs::data_local_dir()` returns `None`, history is written to wherever the
+binary was launched from.
 
-**Fix:** Fall back to `$HOME/.local/share/clip_pop` explicitly:
+**Fix:**
 
 ```rust
 dirs::data_local_dir()
@@ -103,13 +130,11 @@ dirs::data_local_dir()
 
 **File:** `src/app.rs` — `content_hash()`, `src/history.rs` — `simple_hash()`
 
-`std::collections::hash_map::DefaultHasher` is explicitly documented as
-unstable — its output can change between Rust releases. A hash collision would
-cause a clipboard event to be silently dropped (missed dedup) or an image to
-not be recognised as a duplicate.
+`std::collections::hash_map::DefaultHasher` output can change between Rust
+releases. A hash collision would silently drop a clipboard event or fail to
+deduplicate an image.
 
-**Fix:** Use a stable, deterministic hash. Add `rustc-hash` or inline a simple
-`FxHash`/`djb2` implementation:
+**Fix:** Use a stable deterministic hash:
 
 ```toml
 # Cargo.toml
@@ -133,21 +158,7 @@ fn content_hash(data: &[u8]) -> u64 {
 
 **File:** `src/history.rs` — `push_image()`
 
-```rust
-// Deduplicate by content hash before touching disk
-let hash = simple_hash(rgba);
-if let Some(existing) = self.entries.iter().find(|e| {
-    matches!(&e.kind, EntryKind::Image { path, .. } if {
-        path.file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.split('_').next())
-            .and_then(|h| h.parse::<u64>().ok())
-            == Some(hash)
-    })
-}) { ... }
-```
-
-The hash is recovered by parsing the filename. If the file is renamed, moved,
+The content hash is recovered by parsing the filename. If the file is renamed
 or the naming scheme changes, dedup silently breaks.
 
 **Fix:** Store the hash directly in `EntryKind::Image`:
@@ -159,56 +170,109 @@ pub enum EntryKind {
 }
 ```
 
-Dedup then becomes a simple field comparison with no string parsing.
-Note: this is a breaking change to the `history.json` schema — bump
-`Config::VERSION` and add a migration path.
+Note: this is a breaking change to `history.json` — bump `Config::VERSION` and
+handle migration.
 
 ---
 
 ### [MISSING] No LICENSE file
 
 The repository declares `license = "MIT"` in `Cargo.toml` but there is no
-`LICENSE` file in the repo root. This means the licence is not legally
-enforceable and crates.io / packaging tools will warn.
-
-**Fix:** Add a standard MIT `LICENSE` file.
+`LICENSE` file. Add a standard MIT `LICENSE` file.
 
 ---
 
 ## Should-fix for v1.0.0
 
-These are not hard blockers but significantly affect user experience.
-
 ---
 
 ### [FEATURE] No settings UI
 
-All configuration fields (`max_history`, `poll_interval_ms`, `preview_chars`,
-`move_to_top_on_select`) are only changeable via a third-party `cosmic-config`
-editor. Users have no in-app way to adjust settings.
+All config fields are only changeable via a third-party `cosmic-config` editor.
 
-**Fix:** Add a Settings context drawer page with sliders/toggles for each
-`Config` field, writing changes back via `cosmic_config::Config`.
+**Fix:** Add a Settings context drawer page with controls for each `Config`
+field, writing changes back via `cosmic_config::Config`.
 
 ---
 
 ### [FEATURE] No keyboard shortcut to open the window
 
-There is no global hotkey to bring Clip Pop to the foreground. Users must
-find it in the app launcher or taskbar.
-
-**Fix:** Register a global keybinding (e.g. `Super+V`) via COSMIC's keybinding
-API, or document how to set one in COSMIC Settings → Keyboard → Shortcuts.
+**Fix:** Register a global keybinding via COSMIC's keybinding API, or document
+how to set one in COSMIC Settings → Keyboard → Shortcuts.
 
 ---
 
 ### [FEATURE] No way to copy without moving to top
 
-`move_to_top_on_select` is configurable but there is no per-action override.
-Power users may want to copy an item without disturbing the history order.
+**Fix:** Add a secondary action that copies without promoting the item.
 
-**Fix:** Add a secondary action (e.g. right-click or a dedicated copy button)
-that copies without promoting.
+---
+
+## v0.3.0 — Technical improvements (informed by cosmic-utils comparison)
+
+---
+
+### [IMPROVEMENT] Replace arboard polling with event-driven zwlr_data_control
+
+**Current:** `arboard` polls the clipboard every 500ms.
+
+**Problem:** Polling misses rapid copies, wastes CPU, and is limited to text
+and PNG. arboard does not support full MIME negotiation.
+
+**Fix:** Implement a dedicated clipboard watcher using `cctk`
+(`cosmic::cctk`) and the `zwlr_data_control_v1` Wayland protocol directly,
+the same approach used by `cosmic-utils/clipboard-manager`. This gives:
+
+- Event-driven — zero polling, instant capture
+- Full MIME type support (HTML, RTF, file lists, custom types)
+- Correct handling of multiple Wayland seats
+- No dependency on arboard at all
+
+Reference: [`src/clipboard_watcher.rs`](https://github.com/cosmic-utils/clipboard-manager/blob/master/src/clipboard_watcher.rs)
+in cosmic-utils/clipboard-manager.
+
+---
+
+### [IMPROVEMENT] Replace serde_json flat file with SQLite
+
+**Current:** History is a single JSON array written on every change.
+
+**Problem:** Slow on large histories, no querying, no entry expiry, no
+pagination, no atomic writes.
+
+**Fix:** Use `sqlx` with SQLite (same as cosmic-utils/clipboard-manager):
+
+- Atomic writes
+- Entry lifetime expiry (e.g. auto-delete entries older than 30 days)
+- Pagination for large histories
+- Proper indexing for fast search
+
+---
+
+### [IMPROVEMENT] Replace substring search with fuzzy search
+
+**Current:** `e.kind.dedup_key().to_lowercase().contains(&query)`
+
+**Fix:** Use `nucleo` (same as cosmic-utils/clipboard-manager) for fuzzy
+matching. Significantly better UX when searching long histories.
+
+```toml
+nucleo = "0.5"
+```
+
+---
+
+### [IMPROVEMENT] Full MIME type support
+
+**Current:** Only text (`get_text()`) and PNG images (`get_image()`) are
+captured.
+
+**Fix:** With the `zwlr_data_control` watcher, negotiate MIME types and store
+the preferred type per entry. Support at minimum:
+- `text/plain`
+- `text/html`
+- `image/png`, `image/jpeg`, `image/webp`
+- `text/uri-list` (file paths)
 
 ---
 
@@ -216,10 +280,12 @@ that copies without promoting.
 
 - Image preview on hover / expand
 - Regex search mode
-- Auto-clear history on interval (like clipboard-indicator)
+- Auto-clear history on interval
 - Exclude specific apps from being recorded
 - Keyboard navigation within the list (arrow keys, Enter to select)
-- Multiple clipboard support (primary selection)
+- Primary selection support
+- QR code generation for selected text (libcosmic has `qr_code` feature)
+- Export / import history
 
 ---
 
@@ -228,6 +294,6 @@ that copies without promoting.
 | Version | Goal |
 |---------|------|
 | 0.1.0 | Initial release — core functionality working |
-| 0.2.0 | Fix all blockers listed above |
-| 0.3.0 | Settings UI, keyboard shortcut |
-| 1.0.0 | Stable, all blockers resolved, settings UI complete |
+| 0.2.0 | Fix all v1.0.0 blockers, add LICENSE, settings UI |
+| 0.3.0 | Event-driven watcher, SQLite storage, fuzzy search, full MIME |
+| 1.0.0 | Stable, all blockers resolved, feature-complete |

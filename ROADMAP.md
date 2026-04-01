@@ -4,7 +4,11 @@
 
 ## Changelog
 
-### v0.3.0 (current)
+### v0.3.1 (current)
+
+- **Bug fix** — text entries with no word boundaries (long URLs, code, base64) were overflowing past the pin and delete buttons. Added `WordOrGlyph` wrapping to the text widget.
+
+### v0.3.0
 
 - **Event-driven clipboard watcher** — `src/clipboard_watcher.rs` implements `zwlr_data_control_v1` directly using `wayland-client`. Uses `blocking_dispatch()` — zero polling, fires instantly the moment something is copied. Falls back to `wl-clipboard-rs` 100ms polling if the compositor doesn't support the protocol.
 - **Entry lifetime expiry** — `entry_lifetime_days` config field (default 30 days). Unpinned entries older than the configured limit are deleted on startup.
@@ -129,4 +133,5 @@ In-app settings panel for all `Config` fields — max history, preview length, e
 | 0.1.0 ✓ | Initial release |
 | 0.2.0 ✓ | SQLite, wl-clipboard-rs, nucleo, FxHash, private_mode persist |
 | 0.3.0 ✓ | Event-driven watcher, entry expiry, DB tests |
+| 0.3.1 ✓ | Fix text overflow in history rows |
 | 1.0.0 | Settings UI, keyboard shortcut, full MIME, pagination |

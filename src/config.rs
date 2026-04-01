@@ -60,12 +60,16 @@ pub const CLIPBOARD_SUBSCRIPTION_ID: &str = "clip-pop-clipboard-watcher";
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq)]
 #[version = 1]
 pub struct Config {
-    /// Maximum number of clipboard entries to retain.
+    /// Maximum number of clipboard entries to retain (unpinned).
     pub max_history: usize,
     /// Clipboard poll interval in milliseconds.
     pub poll_interval_ms: u64,
     /// Maximum characters shown in a list item preview.
     pub preview_chars: usize,
+    /// Move item to top of unpinned section when selected.
+    pub move_to_top_on_select: bool,
+    /// Pause clipboard recording.
+    pub private_mode: bool,
 }
 
 impl Default for Config {
@@ -74,6 +78,8 @@ impl Default for Config {
             max_history: DEFAULT_HISTORY,
             poll_interval_ms: DEFAULT_POLL_MS,
             preview_chars: DEFAULT_PREVIEW_CHARS,
+            move_to_top_on_select: true,
+            private_mode: false,
         }
     }
 }

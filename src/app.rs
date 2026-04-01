@@ -24,29 +24,29 @@ pub struct AppModel {
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     config: Config,
     history: HistoryStore,
-    /// Current search query entered by the user.
     search_query: String,
+    /// Index of the item currently in the system clipboard.
+    active_index: Option<usize>,
+    /// Show confirm-clear dialog.
+    show_confirm_clear: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    /// A new clipboard value was detected by the background watcher.
     ClipboardChanged(Option<String>),
-    /// User clicked a history item to copy it.
-    CopyItem(usize),
-    /// User clicked the delete button on a history item.
+    /// Copy item at index back to clipboard and promote it.
+    SelectItem(usize),
+    PinItem(usize),
     DeleteItem(usize),
-    /// User pressed "Clear All".
-    ClearAll,
-    /// Search bar input changed.
+    /// Show confirm dialog before clearing.
+    RequestClearAll,
+    ConfirmClearAll,
+    CancelClearAll,
+    TogglePrivateMode,
     SearchChanged(String),
-    /// Clear the search bar.
     SearchClear,
-    /// Open a URL (used by the About page).
     LaunchUrl(String),
-    /// Toggle a context drawer page.
     ToggleContextPage(ContextPage),
-    /// Config was updated externally (dbus-config watch).
     UpdateConfig(Config),
 }
 
@@ -93,6 +93,8 @@ impl cosmic::Application for AppModel {
             config,
             history,
             search_query: String::new(),
+            active_index: None,
+            show_confirm_clear: false,
         };
 
         let command = app.update_title();
@@ -110,6 +112,24 @@ impl cosmic::Application for AppModel {
         vec![menu_bar.into()]
     }
 
+    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
+        // Private mode toggle in the header
+        let icon_name = if self.config.private_mode {
+            "security-high-symbolic"
+        } else {
+            "security-low-symbolic"
+        };
+        vec![
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name(icon_name))
+                    .on_press(Message::TogglePrivateMode),
+                widget::text(fl!("private-mode")),
+                widget::tooltip::Position::Bottom,
+            )
+            .into(),
+        ]
+    }
+
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
         if !self.core.window.show_context {
             return None;
@@ -123,6 +143,26 @@ impl cosmic::Application for AppModel {
         })
     }
 
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        if !self.show_confirm_clear {
+            return None;
+        }
+
+        let dialog = widget::dialog()
+            .title(fl!("confirm-clear-title"))
+            .body(fl!("confirm-clear-body"))
+            .primary_action(
+                widget::button::destructive(fl!("confirm-clear-confirm"))
+                    .on_press(Message::ConfirmClearAll),
+            )
+            .secondary_action(
+                widget::button::text(fl!("confirm-clear-cancel"))
+                    .on_press(Message::CancelClearAll),
+            );
+
+        Some(dialog.into())
+    }
+
     fn view(&self) -> Element<'_, Self::Message> {
         let spacing = cosmic::theme::spacing();
 
@@ -132,17 +172,16 @@ impl cosmic::Application for AppModel {
             .on_clear(Message::SearchClear)
             .width(Length::Fill);
 
-        // ── Toolbar: search + clear all ───────────────────────────────────────
         let toolbar = widget::row::with_capacity(2)
             .push(search)
             .push(
                 widget::button::destructive(fl!("clear-all"))
-                    .on_press(Message::ClearAll),
+                    .on_press(Message::RequestClearAll),
             )
             .spacing(spacing.space_s)
             .padding([spacing.space_xs, spacing.space_s]);
 
-        // ── History list ──────────────────────────────────────────────────────
+        // ── Filter entries ────────────────────────────────────────────────────
         let query = self.search_query.to_lowercase();
         let filtered: Vec<(usize, _)> = self
             .history
@@ -152,6 +191,7 @@ impl cosmic::Application for AppModel {
             .filter(|(_, e)| query.is_empty() || e.content.to_lowercase().contains(&query))
             .collect();
 
+        // ── Empty state ───────────────────────────────────────────────────────
         let content: Element<_> = if filtered.is_empty() {
             widget::container(
                 widget::column::with_capacity(2)
@@ -173,38 +213,43 @@ impl cosmic::Application for AppModel {
             .align_y(Vertical::Center)
             .into()
         } else {
-            let list = filtered
-                .iter()
-                .fold(widget::list_column().spacing(0), |col, (i, entry)| {
-                    let preview = entry.preview(self.config.preview_chars);
-                    let time = entry.relative_time_i18n();
+            // Split into pinned / unpinned for rendering
+            let pinned: Vec<_> = filtered.iter().filter(|(_, e)| e.pinned).collect();
+            let unpinned: Vec<_> = filtered.iter().filter(|(_, e)| !e.pinned).collect();
 
-                    let item = widget::row::with_capacity(2)
-                        .push(
-                            widget::column::with_capacity(2)
-                                .push(widget::text::body(preview))
-                                .push(widget::text::caption(time))
-                                .spacing(spacing.space_xxxs)
-                                .width(Length::Fill),
-                        )
-                        .push(
-                            widget::button::icon(
-                                widget::icon::from_name("edit-delete-symbolic"),
-                            )
-                            .on_press(Message::DeleteItem(*i)),
-                        )
-                        .align_y(cosmic::iced::Alignment::Center)
-                        .spacing(spacing.space_xs)
-                        .padding([spacing.space_xs, spacing.space_s]);
+            let mut col = widget::list_column().spacing(0);
 
-                    col.add(
-                        widget::button::custom(item)
-                            .on_press(Message::CopyItem(*i))
-                            .width(Length::Fill),
-                    )
-                });
+            // ── Pinned section ────────────────────────────────────────────────
+            if !pinned.is_empty() {
+                col = col.add(
+                    widget::text::caption(fl!("pinned"))
+                        .width(Length::Fill)
+                        .apply(|t| {
+                            widget::container(t)
+                                .padding([spacing.space_xxs, spacing.space_s])
+                        }),
+                );
+                for (i, entry) in &pinned {
+                    col = col.add(self.history_row(*i, entry));
+                }
+            }
 
-            widget::scrollable(list)
+            // ── History section ───────────────────────────────────────────────
+            if !unpinned.is_empty() {
+                col = col.add(
+                    widget::text::caption(fl!("history"))
+                        .width(Length::Fill)
+                        .apply(|t| {
+                            widget::container(t)
+                                .padding([spacing.space_xxs, spacing.space_s])
+                        }),
+                );
+                for (i, entry) in &unpinned {
+                    col = col.add(self.history_row(*i, entry));
+                }
+            }
+
+            widget::scrollable(col)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -224,8 +269,13 @@ impl cosmic::Application for AppModel {
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::UpdateConfig(update.config));
 
-        let clipboard_watch = clipboard::watch(self.config.poll_interval_ms)
-            .map(Message::ClipboardChanged);
+        // Don't poll in private mode
+        if self.config.private_mode {
+            return config_watch;
+        }
+
+        let clipboard_watch =
+            clipboard::watch(self.config.poll_interval_ms).map(Message::ClipboardChanged);
 
         Subscription::batch([config_watch, clipboard_watch])
     }
@@ -233,25 +283,77 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
             Message::ClipboardChanged(Some(text)) => {
-                self.history.push(text);
+                self.history.push(text.clone());
+                // Mark the matching entry as active
+                self.active_index = self
+                    .history
+                    .entries()
+                    .iter()
+                    .position(|e| e.content == text);
             }
 
-            Message::ClipboardChanged(None) => {}
+            Message::ClipboardChanged(None) => {
+                self.active_index = None;
+            }
 
-            Message::CopyItem(i) => {
-                if let Some(entry) = self.history.promote(i) {
-                    if let Err(e) = clipboard::set_text(&entry.content.clone()) {
+            Message::SelectItem(i) => {
+                if let Some(entry) = if self.config.move_to_top_on_select {
+                    self.history.promote(i)
+                } else {
+                    self.history.entries().get(i)
+                } {
+                    let content = entry.content.clone();
+                    if let Err(e) = clipboard::set_text(&content) {
                         error!("failed to set clipboard: {e}");
+                    } else {
+                        self.active_index = self
+                            .history
+                            .entries()
+                            .iter()
+                            .position(|e| e.content == content);
                     }
                 }
             }
 
+            Message::PinItem(i) => {
+                self.history.toggle_pin(i);
+                // Recompute active index after reorder
+                if let Some(active_content) = self
+                    .active_index
+                    .and_then(|idx| self.history.entries().get(idx))
+                    .map(|e| e.content.clone())
+                {
+                    self.active_index = self
+                        .history
+                        .entries()
+                        .iter()
+                        .position(|e| e.content == active_content);
+                }
+            }
+
             Message::DeleteItem(i) => {
+                if self.active_index == Some(i) {
+                    self.active_index = None;
+                }
                 self.history.remove(i);
             }
 
-            Message::ClearAll => {
-                self.history.clear();
+            Message::RequestClearAll => {
+                self.show_confirm_clear = true;
+            }
+
+            Message::ConfirmClearAll => {
+                self.show_confirm_clear = false;
+                self.history.clear_unpinned();
+                self.active_index = None;
+            }
+
+            Message::CancelClearAll => {
+                self.show_confirm_clear = false;
+            }
+
+            Message::TogglePrivateMode => {
+                self.config.private_mode = !self.config.private_mode;
             }
 
             Message::SearchChanged(query) => {
@@ -296,6 +398,75 @@ impl AppModel {
         } else {
             Task::none()
         }
+    }
+
+    /// Build a single history row element.
+    fn history_row<'a>(
+        &'a self,
+        index: usize,
+        entry: &'a crate::history::ClipEntry,
+    ) -> Element<'a, Message> {
+        let spacing = cosmic::theme::spacing();
+        let is_active = self.active_index == Some(index);
+        let preview = entry.preview(self.config.preview_chars);
+
+        // Active indicator dot
+        let indicator: Element<_> = if is_active {
+            widget::icon(widget::icon::from_name("media-record-symbolic").handle())
+                .size(8)
+                .into()
+        } else {
+            widget::container(widget::Space::new())
+                .width(8)
+                .into()
+        };
+
+        let pin_icon = if entry.pinned {
+            "view-pin-symbolic"
+        } else {
+            "view-pin-symbolic"
+        };
+
+        let pin_tooltip = if entry.pinned {
+            fl!("action-unpin")
+        } else {
+            fl!("action-pin")
+        };
+
+        let actions = widget::row::with_capacity(2)
+            .push(
+                widget::tooltip(
+                    widget::button::icon(widget::icon::from_name(pin_icon))
+                        .on_press(Message::PinItem(index)),
+                    widget::text(pin_tooltip),
+                    widget::tooltip::Position::Bottom,
+                ),
+            )
+            .push(
+                widget::tooltip(
+                    widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                        .on_press(Message::DeleteItem(index)),
+                    widget::text(fl!("action-delete")),
+                    widget::tooltip::Position::Bottom,
+                ),
+            )
+            .spacing(0);
+
+        let row = widget::row::with_capacity(3)
+            .push(indicator)
+            .push(
+                widget::text::body(preview)
+                    .width(Length::Fill),
+            )
+            .push(actions)
+            .align_y(cosmic::iced::Alignment::Center)
+            .spacing(spacing.space_xs)
+            .padding([spacing.space_xs, spacing.space_s]);
+
+        widget::button::custom(row)
+            .on_press(Message::SelectItem(index))
+            .width(Length::Fill)
+            .into()
     }
 }
 

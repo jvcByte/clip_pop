@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Clipboard polling subscription.
-//!
-//! Runs in a background async stream, emitting the new clipboard text
-//! whenever it changes. Isolates all `arboard` usage from the UI layer.
+//! Isolates all arboard usage from the UI layer.
 
 use crate::config::CLIPBOARD_SUBSCRIPTION_ID;
 use arboard::Clipboard;
@@ -14,18 +12,20 @@ use cosmic::iced_futures::stream;
 use std::time::Duration;
 use tracing::{error, warn};
 
-/// Returns a [`Subscription`] that polls the system clipboard every
-/// `interval_ms` milliseconds and emits `Some(text)` when the content changes,
-/// or `None` if the clipboard becomes empty / unreadable.
-///
-/// Keyed by both the stable ID and the interval value so it restarts
-/// automatically if the poll interval changes in config.
-pub fn watch(interval_ms: u64) -> Subscription<Option<String>> {
+/// What changed on the clipboard.
+#[derive(Debug, Clone)]
+pub enum ClipboardEvent {
+    Text(String),
+    Image { rgba: Vec<u8>, width: u32, height: u32 },
+    Cleared,
+}
+
+pub fn watch(interval_ms: u64) -> Subscription<ClipboardEvent> {
     Subscription::run_with(
         (CLIPBOARD_SUBSCRIPTION_ID, interval_ms),
         |data| {
             let interval_ms = data.1;
-            stream::channel(1, move |mut tx: Sender<Option<String>>| async move {
+            stream::channel(1, move |mut tx: Sender<ClipboardEvent>| async move {
                 let mut clipboard = match Clipboard::new() {
                     Ok(cb) => cb,
                     Err(e) => {
@@ -34,27 +34,58 @@ pub fn watch(interval_ms: u64) -> Subscription<Option<String>> {
                     }
                 };
 
-                let mut last: Option<String> = None;
+                let mut last_text: Option<String> = None;
+                let mut last_img_hash: Option<u64> = None;
                 let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
 
                 loop {
                     interval.tick().await;
 
-                    let current = match clipboard.get_text() {
-                        Ok(text) if !text.is_empty() => Some(text),
-                        Ok(_) => None,
-                        Err(arboard::Error::ContentNotAvailable) => None,
-                        Err(e) => {
-                            warn!("clipboard read error: {e}");
-                            None
+                    // Try text first
+                    match clipboard.get_text() {
+                        Ok(text) if !text.is_empty() => {
+                            if last_text.as_deref() != Some(text.as_str()) {
+                                last_text = Some(text.clone());
+                                last_img_hash = None;
+                                if tx.send(ClipboardEvent::Text(text)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            continue;
                         }
-                    };
+                        Ok(_) => {}
+                        Err(arboard::Error::ContentNotAvailable) => {}
+                        Err(e) => warn!("clipboard text read error: {e}"),
+                    }
 
-                    if current != last {
-                        last = current.clone();
-                        if tx.send(current).await.is_err() {
-                            break;
+                    // Try image
+                    match clipboard.get_image() {
+                        Ok(img) => {
+                            // Simple hash to detect changes without storing full RGBA
+                            let hash = simple_hash(&img.bytes);
+                            if last_img_hash != Some(hash) {
+                                last_img_hash = Some(hash);
+                                last_text = None;
+                                let event = ClipboardEvent::Image {
+                                    rgba: img.bytes.into_owned(),
+                                    width: img.width as u32,
+                                    height: img.height as u32,
+                                };
+                                if tx.send(event).await.is_err() {
+                                    break;
+                                }
+                            }
                         }
+                        Err(arboard::Error::ContentNotAvailable) => {
+                            if last_text.is_some() || last_img_hash.is_some() {
+                                last_text = None;
+                                last_img_hash = None;
+                                if tx.send(ClipboardEvent::Cleared).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => warn!("clipboard image read error: {e}"),
                     }
                 }
             })
@@ -62,9 +93,34 @@ pub fn watch(interval_ms: u64) -> Subscription<Option<String>> {
     )
 }
 
-/// Write `text` to the system clipboard. Returns an error string on failure.
+/// Write text to the system clipboard.
 pub fn set_text(text: &str) -> Result<(), String> {
     Clipboard::new()
         .and_then(|mut cb| cb.set_text(text))
         .map_err(|e| e.to_string())
+}
+
+/// Write image (RGBA bytes) to the system clipboard.
+pub fn set_image(rgba: &[u8], width: u32, height: u32) -> Result<(), String> {
+    let img_data = arboard::ImageData {
+        bytes: std::borrow::Cow::Borrowed(rgba),
+        width: width as usize,
+        height: height as usize,
+    };
+    Clipboard::new()
+        .and_then(|mut cb| cb.set_image(img_data))
+        .map_err(|e| e.to_string())
+}
+
+fn simple_hash(data: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    // Hash a sample of bytes for speed (first 1KB + last 1KB + length)
+    let len = data.len();
+    len.hash(&mut h);
+    data[..len.min(1024)].hash(&mut h);
+    if len > 1024 {
+        data[len.saturating_sub(1024)..].hash(&mut h);
+    }
+    h.finish()
 }

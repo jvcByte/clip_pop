@@ -2,10 +2,10 @@
 
 //! Application model, view, and update logic.
 
-use crate::clipboard;
+use crate::clipboard::{self, ClipboardEvent};
 use crate::config::{self, Config, DATA_DIR_FALLBACK, DATA_DIR_NAME, HISTORY_FILE_NAME};
 use crate::fl;
-use crate::history::HistoryStore;
+use crate::history::{EntryKind, HistoryStore};
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
@@ -33,12 +33,10 @@ pub struct AppModel {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    ClipboardChanged(Option<String>),
-    /// Copy item at index back to clipboard and promote it.
+    ClipboardChanged(ClipboardEvent),
     SelectItem(usize),
     PinItem(usize),
     DeleteItem(usize),
-    /// Show confirm dialog before clearing.
     RequestClearAll,
     ConfirmClearAll,
     CancelClearAll,
@@ -188,7 +186,9 @@ impl cosmic::Application for AppModel {
             .entries()
             .iter()
             .enumerate()
-            .filter(|(_, e)| query.is_empty() || e.content.to_lowercase().contains(&query))
+            .filter(|(_, e)| {
+                query.is_empty() || e.kind.dedup_key().to_lowercase().contains(&query)
+            })
             .collect();
 
         // ── Empty state ───────────────────────────────────────────────────────
@@ -276,41 +276,65 @@ impl cosmic::Application for AppModel {
 
         let clipboard_watch =
             clipboard::watch(self.config.poll_interval_ms).map(Message::ClipboardChanged);
-
         Subscription::batch([config_watch, clipboard_watch])
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::ClipboardChanged(Some(text)) => {
-                self.history.push(text.clone());
-                // Mark the matching entry as active
-                self.active_index = self
-                    .history
-                    .entries()
-                    .iter()
-                    .position(|e| e.content == text);
-            }
-
-            Message::ClipboardChanged(None) => {
-                self.active_index = None;
+            Message::ClipboardChanged(event) => {
+                match event {
+                    ClipboardEvent::Text(text) => {
+                        self.history.push_text(text.clone());
+                        self.active_index =
+                            self.history.entries().iter().position(|e| {
+                                matches!(&e.kind, EntryKind::Text { content } if content == &text)
+                            });
+                    }
+                    ClipboardEvent::Image { rgba, width, height } => {
+                        if let Some(_path) = self.history.push_image(&rgba, width, height) {
+                            self.active_index = Some(
+                                self.history
+                                    .entries()
+                                    .iter()
+                                    .position(|e| e.kind.is_image())
+                                    .unwrap_or(0),
+                            );
+                        }
+                    }
+                    ClipboardEvent::Cleared => {
+                        self.active_index = None;
+                    }
+                }
             }
 
             Message::SelectItem(i) => {
-                if let Some(entry) = if self.config.move_to_top_on_select {
+                let entry = if self.config.move_to_top_on_select {
                     self.history.promote(i)
                 } else {
                     self.history.entries().get(i)
-                } {
-                    let content = entry.content.clone();
-                    if let Err(e) = clipboard::set_text(&content) {
-                        error!("failed to set clipboard: {e}");
-                    } else {
-                        self.active_index = self
-                            .history
-                            .entries()
-                            .iter()
-                            .position(|e| e.content == content);
+                };
+                if let Some(entry) = entry {
+                    match &entry.kind {
+                        EntryKind::Text { content } => {
+                            let content = content.clone();
+                            if let Err(e) = clipboard::set_text(&content) {
+                                error!("failed to set clipboard text: {e}");
+                            } else {
+                                self.active_index = self.history.entries().iter().position(|e| {
+                                    matches!(&e.kind, EntryKind::Text { content: c } if c == &content)
+                                });
+                            }
+                        }
+                        EntryKind::Image { path, width, height } => {
+                            let (path, w, h) = (path.clone(), *width, *height);
+                            if let Ok(rgba) = std::fs::read(&path) {
+                                if let Err(e) = clipboard::set_image(&rgba, w, h) {
+                                    error!("failed to set clipboard image: {e}");
+                                } else {
+                                    self.active_index = Some(i);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -318,16 +342,16 @@ impl cosmic::Application for AppModel {
             Message::PinItem(i) => {
                 self.history.toggle_pin(i);
                 // Recompute active index after reorder
-                if let Some(active_content) = self
+                let active_key = self
                     .active_index
                     .and_then(|idx| self.history.entries().get(idx))
-                    .map(|e| e.content.clone())
-                {
+                    .map(|e| e.kind.dedup_key());
+                if let Some(key) = active_key {
                     self.active_index = self
                         .history
                         .entries()
                         .iter()
-                        .position(|e| e.content == active_content);
+                        .position(|e| e.kind.dedup_key() == key);
                 }
             }
 
@@ -408,9 +432,8 @@ impl AppModel {
     ) -> Element<'a, Message> {
         let spacing = cosmic::theme::spacing();
         let is_active = self.active_index == Some(index);
-        let preview = entry.preview(self.config.preview_chars);
 
-        // Active indicator dot
+        // ── Active indicator ──────────────────────────────────────────────────
         let indicator: Element<_> = if is_active {
             widget::icon(widget::icon::from_name("media-record-symbolic").handle())
                 .size(8)
@@ -421,43 +444,50 @@ impl AppModel {
                 .into()
         };
 
-        let pin_icon = if entry.pinned {
-            "view-pin-symbolic"
-        } else {
-            "view-pin-symbolic"
+        // ── Content area ──────────────────────────────────────────────────────
+        let content_area: Element<_> = match &entry.kind {
+            EntryKind::Text { .. } => {
+                widget::text::body(entry.preview(self.config.preview_chars))
+                    .width(Length::Fill)
+                    .into()
+            }
+            EntryKind::Image { path, .. } => {
+                widget::column::with_capacity(2)
+                    .push(
+                        widget::image(widget::image::Handle::from_path(path))
+                            .width(Length::Fixed(120.0))
+                            .height(Length::Fixed(68.0))
+                            .content_fit(cosmic::iced::ContentFit::Cover),
+                    )
+                    .push(widget::text::caption(entry.preview(self.config.preview_chars)))
+                    .spacing(spacing.space_xxxs)
+                    .width(Length::Fill)
+                    .into()
+            }
         };
 
-        let pin_tooltip = if entry.pinned {
-            fl!("action-unpin")
-        } else {
-            fl!("action-pin")
-        };
+        // ── Action buttons ────────────────────────────────────────────────────
+        let pin_icon = "view-pin-symbolic";
+        let pin_tooltip = if entry.pinned { fl!("action-unpin") } else { fl!("action-pin") };
 
         let actions = widget::row::with_capacity(2)
-            .push(
-                widget::tooltip(
-                    widget::button::icon(widget::icon::from_name(pin_icon))
-                        .on_press(Message::PinItem(index)),
-                    widget::text(pin_tooltip),
-                    widget::tooltip::Position::Bottom,
-                ),
-            )
-            .push(
-                widget::tooltip(
-                    widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
-                        .on_press(Message::DeleteItem(index)),
-                    widget::text(fl!("action-delete")),
-                    widget::tooltip::Position::Bottom,
-                ),
-            )
+            .push(widget::tooltip(
+                widget::button::icon(widget::icon::from_name(pin_icon))
+                    .on_press(Message::PinItem(index)),
+                widget::text(pin_tooltip),
+                widget::tooltip::Position::Bottom,
+            ))
+            .push(widget::tooltip(
+                widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                    .on_press(Message::DeleteItem(index)),
+                widget::text(fl!("action-delete")),
+                widget::tooltip::Position::Bottom,
+            ))
             .spacing(0);
 
         let row = widget::row::with_capacity(3)
             .push(indicator)
-            .push(
-                widget::text::body(preview)
-                    .width(Length::Fill),
-            )
+            .push(content_area)
             .push(actions)
             .align_y(cosmic::iced::Alignment::Center)
             .spacing(spacing.space_xs)
@@ -466,6 +496,7 @@ impl AppModel {
         widget::button::custom(row)
             .on_press(Message::SelectItem(index))
             .width(Length::Fill)
+            .class(cosmic::theme::Button::MenuItem)
             .into()
     }
 }

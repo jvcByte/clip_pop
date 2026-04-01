@@ -114,6 +114,7 @@ impl HistoryStore {
         &self.entries
     }
 
+    #[allow(dead_code)]
     pub fn images_dir(&self) -> &Path {
         &self.images_dir
     }

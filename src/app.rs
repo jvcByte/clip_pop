@@ -468,12 +468,15 @@ impl AppModel {
         // ── Content area ──────────────────────────────────────────────────────
         let content_area: Element<_> = match &entry.kind {
             EntryKind::Text { .. } => {
-                widget::text::body(entry.preview(self.config.preview_chars))
+                widget::column::with_capacity(2)
+                    .push(widget::text::body(entry.preview(self.config.preview_chars)).width(Length::Fill))
+                    .push(widget::text::caption(entry.relative_time_i18n()))
+                    .spacing(spacing.space_xxxs)
                     .width(Length::Fill)
                     .into()
             }
             EntryKind::Image { path, .. } => {
-                widget::column::with_capacity(2)
+                widget::column::with_capacity(3)
                     .push(
                         widget::image(widget::image::Handle::from_path(path))
                             .width(Length::Fixed(120.0))
@@ -481,6 +484,7 @@ impl AppModel {
                             .content_fit(cosmic::iced::ContentFit::Cover),
                     )
                     .push(widget::text::caption(entry.preview(self.config.preview_chars)))
+                    .push(widget::text::caption(entry.relative_time_i18n()))
                     .spacing(spacing.space_xxxs)
                     .width(Length::Fill)
                     .into()

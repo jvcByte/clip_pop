@@ -4,33 +4,7 @@
 
 ## Changelog
 
-### v0.3.1 (current)
-
-- **Bug fix** — text entries with no word boundaries (long URLs, code, base64) were overflowing past the pin and delete buttons. Added `WordOrGlyph` wrapping to the text widget.
-
-### v0.3.0
-
-- **Event-driven clipboard watcher** — `src/clipboard_watcher.rs` implements `zwlr_data_control_v1` directly using `wayland-client`. Uses `blocking_dispatch()` — zero polling, fires instantly the moment something is copied. Falls back to `wl-clipboard-rs` 100ms polling if the compositor doesn't support the protocol.
-- **Entry lifetime expiry** — `entry_lifetime_days` config field (default 30 days). Unpinned entries older than the configured limit are deleted on startup.
-- **DB unit tests** — 7 tests covering insert, deduplication, pin, promote, trim, remove, and expiry.
-- **Dependencies added** — `wayland-client`, `wayland-protocols-wlr`, `os_pipe`, `thiserror`, `tempfile` (dev).
-
-### v0.2.0
-
-- **Clipboard watcher** — replaced `arboard` polling with `wl-clipboard-rs` using the `zwlr_data_control` / `ext-data-control` Wayland protocol. No focus requirement. Poll interval 100ms.
-- **Storage** — replaced `serde_json` flat file with SQLite via `sqlx`. History stored in `~/.local/share/clip_pop/history.db`. Images stored as raw bytes in the DB.
-- **Search** — replaced substring `contains()` with `nucleo` fuzzy matcher.
-- **Full MIME support** — text and image MIME types negotiated from the compositor.
-- **Stable hashing** — replaced `DefaultHasher` with `FxHasher` from `rustc-hash`.
-- **active_id** — tracks the active clipboard entry by stable DB row ID instead of array index.
-- **private_mode persisted** — toggling private mode writes to `cosmic-config` immediately.
-- **DATA_DIR fallback** — falls back to `$HOME/.local/share` then `/tmp`.
-- **LICENSE** — MIT license file added.
-- **Error state** — shows a banner if the compositor doesn't support the required Wayland protocol.
-
-### v0.1.0
-
-- Initial release — text and image clipboard history, pin items, private mode, search, confirm clear, active item indicator, persistent JSON storage.
+See [CHANGELOG.md](./CHANGELOG.md) for the full version history.
 
 ---
 

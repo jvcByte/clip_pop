@@ -112,4 +112,4 @@ Translations use [Fluent](https://projectfluent.org/). Copy `i18n/en/` to `i18n/
 
 ## License
 
-MIT — see [LICENSE](./LICENSE)
+MIT — see [LICENSE](./LICENSE) — [Changelog](./CHANGELOG.md)

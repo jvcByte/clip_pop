@@ -3,7 +3,7 @@
 //! Application model, view, and update logic.
 
 use crate::clipboard::{self, ClipboardEvent, fx_hash};
-use crate::config::{self, Config, DATA_DIR_NAME, DB_FILE_NAME, PRIVATE_MODE};
+use crate::config::{self, Config, DATA_DIR_NAME, DB_FILE_NAME, PRIVATE_MODE, autostart_path};
 use crate::db::{Db, fuzzy_search};
 use crate::fl;
 use cosmic::app::context_drawer;
@@ -50,6 +50,7 @@ pub enum Message {
     ConfirmClearAll,
     CancelClearAll,
     TogglePrivateMode,
+    ToggleLaunchOnLogin,
     SearchChanged(String),
     SearchClear,
     /// Global keyboard shortcut fired.
@@ -82,6 +83,13 @@ impl cosmic::Application for AppModel {
 
         // Sync atomic private mode flag
         PRIVATE_MODE.store(config.private_mode, atomic::Ordering::Relaxed);
+
+        // Sync launch_on_login with actual autostart file state
+        let autostart_exists = autostart_path().exists();
+        let mut config = config;
+        if config.launch_on_login != autostart_exists {
+            config.launch_on_login = autostart_exists;
+        }
 
         let db_path = dirs::data_local_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
@@ -141,13 +149,17 @@ impl cosmic::Application for AppModel {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        let icon_name = if self.config.private_mode {
+        let private_icon = if self.config.private_mode {
             "security-high-symbolic"
         } else {
             "security-low-symbolic"
         };
         vec![
-            widget::button::icon(widget::icon::from_name(icon_name))
+            widget::button::icon(widget::icon::from_name("system-run-symbolic"))
+                .on_press(Message::ToggleLaunchOnLogin)
+                .selected(self.config.launch_on_login)
+                .into(),
+            widget::button::icon(widget::icon::from_name(private_icon))
                 .on_press(Message::TogglePrivateMode)
                 .selected(self.config.private_mode)
                 .into(),
@@ -424,9 +436,31 @@ impl cosmic::Application for AppModel {
             Message::TogglePrivateMode => {
                 self.config.private_mode = !self.config.private_mode;
                 PRIVATE_MODE.store(self.config.private_mode, atomic::Ordering::Relaxed);
-                // Persist to cosmic-config
                 if let Err(e) = self.config.set_private_mode(&self.config_ctx, self.config.private_mode) {
                     error!("failed to persist private_mode: {e}");
+                }
+            }
+
+            Message::ToggleLaunchOnLogin => {
+                self.config.launch_on_login = !self.config.launch_on_login;
+                let path = autostart_path();
+                if self.config.launch_on_login {
+                    // Write autostart desktop file
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let content = format!(
+                        "[Desktop Entry]\nName=Clip Pop\nType=Application\nExec=clip_pop\nHidden=false\nX-GNOME-Autostart-enabled=true\n"
+                    );
+                    if let Err(e) = std::fs::write(&path, content) {
+                        error!("failed to write autostart file: {e}");
+                        self.config.launch_on_login = false;
+                    }
+                } else {
+                    let _ = std::fs::remove_file(&path);
+                }
+                if let Err(e) = self.config.set_launch_on_login(&self.config_ctx, self.config.launch_on_login) {
+                    error!("failed to persist launch_on_login: {e}");
                 }
             }
 

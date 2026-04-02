@@ -36,6 +36,17 @@ pub const WINDOW_MIN_HEIGHT: f32 = 400.0;
 pub const DATA_DIR_NAME: &str = "clip_pop";
 pub const DB_FILE_NAME: &str = "history.db";
 
+/// Autostart desktop file installed to `~/.config/autostart/`.
+pub const AUTOSTART_DESKTOP_FILE: &str = "com.github.jvcByte.clip_pop.desktop";
+
+/// Returns the path to the user autostart directory entry.
+pub fn autostart_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("autostart")
+        .join(AUTOSTART_DESKTOP_FILE)
+}
+
 // ── Logging ───────────────────────────────────────────────────────────────────
 
 pub const DEFAULT_LOG_LEVEL: &str = "info";
@@ -67,6 +78,8 @@ pub struct Config {
     pub preferred_mime_types: Vec<String>,
     /// Auto-delete unpinned entries older than this many days. None = never.
     pub entry_lifetime_days: Option<u64>,
+    /// Launch Clip Pop automatically on login.
+    pub launch_on_login: bool,
 }
 
 impl Default for Config {
@@ -78,6 +91,7 @@ impl Default for Config {
             private_mode: false,
             preferred_mime_types: Vec::new(),
             entry_lifetime_days: Some(30),
+            launch_on_login: false,
         }
     }
 }

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Clip Pop
+Comment=Clipboard manager — starts automatically on login
+Type=Application
+Icon=com.github.jvcByte.clip_pop
+Exec=clip_pop
+Terminal=false
+Hidden=false
+X-GNOME-Autostart-enabled=true

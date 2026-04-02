@@ -17,7 +17,10 @@ desktop := appid + '.desktop'
 # Application's icon.
 icon-svg := appid + '.svg'
 
-# Install destinations
+# Autostart file name
+autostart := appid + '.autostart.desktop'
+# User autostart directory
+autostart-dir := env('HOME') + '/.config/autostart'
 base-dir := absolute_path(clean(rootdir / prefix))
 appdata-dst := base-dir / 'share' / 'appdata' / appdata
 bin-dst := base-dir / 'bin' / name
@@ -76,6 +79,17 @@ install:
 # Uninstalls installed files
 uninstall:
     rm -rf {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}}
+
+# Enable autostart on login (user-level, no sudo)
+enable-autostart:
+    mkdir -p {{autostart-dir}}
+    install -Dm0644 {{ 'resources' / autostart }} {{ autostart-dir / desktop }}
+    @echo "Clip Pop will start automatically on next login."
+
+# Disable autostart
+disable-autostart:
+    rm -f {{ autostart-dir / desktop }}
+    @echo "Autostart disabled."
 
 # Vendor dependencies locally
 vendor:

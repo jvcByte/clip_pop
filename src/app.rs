@@ -296,7 +296,6 @@ impl cosmic::Application for AppModel {
 
     /// Called when a second instance tries to launch (Super+V while already running).
     /// Toggles window — focus if minimized/hidden, minimize if visible.
-    #[cfg(feature = "single-instance")]
     fn dbus_activation(
         &mut self,
         _msg: cosmic::dbus_activation::Message,

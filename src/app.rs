@@ -21,9 +21,10 @@ const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 
 /// Flags type required by run_single_instance.
+/// Flags type required by run_single_instance.
 #[derive(Debug, Clone, Default)]
 pub struct Flags {
-    pub toggle: bool,
+    pub minimize: bool,
 }
 
 impl CosmicFlags for Flags {
@@ -31,10 +32,9 @@ impl CosmicFlags for Flags {
     type Args = Vec<String>;
 
     fn action(&self) -> Option<&String> {
-        if self.toggle {
-            // Return a static ref — use a leaked string for simplicity
-            static TOGGLE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-            Some(TOGGLE.get_or_init(|| "toggle".to_owned()))
+        if self.minimize {
+            static MINIMIZE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+            Some(MINIMIZE.get_or_init(|| "minimize".to_owned()))
         } else {
             None
         }
@@ -306,21 +306,19 @@ impl cosmic::Application for AppModel {
             .into()
     }
 
-    /// Called when a second instance tries to launch (Super+V while already running).
-    /// - Plain activate (clip_pop) → just focus
-    /// - ActivateAction "toggle" (clip_pop --toggle) → minimize if visible, focus if minimized
+    /// Super+V → focus. Super+Shift+V → minimize.
     fn dbus_activation(
         &mut self,
         msg: cosmic::dbus_activation::Message,
     ) -> Task<cosmic::Action<Self::Message>> {
         use cosmic::dbus_activation::Details;
-        let is_toggle = matches!(
+        let should_minimize = matches!(
             msg.msg,
-            Details::ActivateAction { ref action, .. } if action == "toggle"
+            Details::ActivateAction { ref action, .. } if action == "minimize"
         );
 
         if let Some(id) = self.core.main_window_id() {
-            if is_toggle && !self.window_minimized {
+            if should_minimize {
                 self.window_minimized = true;
                 cosmic::iced::window::minimize::<cosmic::Action<Message>>(id, true)
             } else {

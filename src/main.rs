@@ -35,6 +35,6 @@ fn main() -> cosmic::iced::Result {
     // run_single_instance ensures only one process runs at a time.
     // When Super+V triggers a second launch, it activates the existing
     // instance via D-Bus instead of opening a new window.
-    let toggle = std::env::args().any(|a| a == "--toggle");
-    cosmic::app::run_single_instance::<app::AppModel>(settings, app::Flags { toggle })
+    let minimize = std::env::args().any(|a| a == "--minimize");
+    cosmic::app::run_single_instance::<app::AppModel>(settings, app::Flags { minimize })
 }

@@ -60,12 +60,12 @@ just dev-install
 Wayland does not support global hotkeys for third-party apps directly. To open Clip Pop with `Super+V`:
 
 1. Open **COSMIC Settings** → **Keyboard** → **Keyboard Shortcuts** → **Custom Shortcuts**
-2. Add a new shortcut:
-   - Name: `Clip Pop`
-   - Command: `clip_pop --toggle`
-   - Shortcut: `Super+V`
+2. Add two shortcuts:
 
-This toggles Clip Pop — opens it if minimized, minimizes it if open.
+   | Shortcut | Command | Action |
+   |---|---|---|
+   | `Super+V` | `clip_pop` | Open / focus |
+   | `Super+Shift+V` | `clip_pop --minimize` | Minimize |
 
 ## Autostart
 

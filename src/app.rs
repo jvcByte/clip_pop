@@ -7,6 +7,7 @@ use crate::config::{self, Config, DATA_DIR_NAME, DB_FILE_NAME, PRIVATE_MODE, aut
 use crate::db::{Db, fuzzy_search};
 use crate::fl;
 use cosmic::app::context_drawer;
+use cosmic::app::CosmicFlags;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};
@@ -18,6 +19,15 @@ use tracing::error;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
+
+/// Flags type required by run_single_instance.
+#[derive(Debug, Clone, Default)]
+pub struct Flags;
+
+impl CosmicFlags for Flags {
+    type SubCommand = String;
+    type Args = Vec<String>;
+}
 
 pub struct AppModel {
     core: cosmic::Core,
@@ -58,7 +68,7 @@ pub enum Message {
 
 impl cosmic::Application for AppModel {
     type Executor = cosmic::executor::Default;
-    type Flags = ();
+    type Flags = Flags;
     type Message = Message;
 
     const APP_ID: &'static str = config::APP_ID;
@@ -74,8 +84,7 @@ impl cosmic::Application for AppModel {
     fn init(
         core: cosmic::Core,
         _flags: Self::Flags,
-    ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        let (config_ctx, config) = config::load(Self::APP_ID);
+    ) -> (Self, Task<cosmic::Action<Self::Message>>) {        let (config_ctx, config) = config::load(Self::APP_ID);
 
         // Sync atomic private mode flag
         PRIVATE_MODE.store(config.private_mode, atomic::Ordering::Relaxed);
@@ -314,8 +323,21 @@ impl cosmic::Application for AppModel {
             .into()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
-        let config_watch = self
+    /// Called when a second instance tries to launch (Super+V while already running).
+    /// Toggles window visibility — focus if hidden, minimize if visible.
+    #[cfg(feature = "single-instance")]
+    fn dbus_activation(
+        &mut self,
+        _msg: cosmic::dbus_activation::Message,
+    ) -> Task<cosmic::Action<Self::Message>> {
+        if let Some(id) = self.core.main_window_id() {
+            cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id)
+        } else {
+            Task::none()
+        }
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {        let config_watch = self
             .core()
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::UpdateConfig(update.config));

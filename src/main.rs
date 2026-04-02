@@ -32,5 +32,8 @@ fn main() -> cosmic::iced::Result {
         )
         .resizable(Some(1.0));
 
-    cosmic::app::run::<app::AppModel>(settings, ())
+    // run_single_instance ensures only one process runs at a time.
+    // When Super+V triggers a second launch, it activates the existing
+    // instance via D-Bus instead of opening a new window.
+    cosmic::app::run_single_instance::<app::AppModel>(settings, app::Flags)
 }

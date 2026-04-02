@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-04-01
+
+### Added
+- `Super+V` keyboard shortcut to bring the window to the foreground from any app.
+
+### Fixed
+- `cosmic-text` dependency patch now points to a pinned fork (`jvcByte/cosmic-text` at `d5a972a`) via HTTPS. No local clone required — anyone can build with `just run`.
+
+---
+
+## [0.3.2] — 2026-04-01
+
+### Fixed
+- `cosmic-text` dependency patch now points to a pinned fork (`jvcByte/cosmic-text` at `d5a972a`) via HTTPS. No local clone required — anyone can build with `just run`.
+
+---
+
 ## [0.3.1] — 2026-04-01
 
 ### Fixed

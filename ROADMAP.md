@@ -46,7 +46,9 @@ All config fields are only changeable via a third-party `cosmic-config` editor.
 
 ### [MISSING] No keyboard shortcut to open the window
 
-**Fix:** Register a global keybinding via COSMIC's keybinding API, or document how to set one in COSMIC Settings → Keyboard → Shortcuts.
+~~**Fix:** Register a global keybinding via COSMIC's keybinding API.~~
+
+**Resolved in v0.4.0** — `Super+V` focuses the window from anywhere.
 
 ---
 
@@ -95,4 +97,6 @@ In-app settings panel for all `Config` fields — max history, preview length, e
 | 0.2.0 ✓ | SQLite, wl-clipboard-rs, nucleo, FxHash, private_mode persist |
 | 0.3.0 ✓ | Event-driven watcher, entry expiry, DB tests |
 | 0.3.1 ✓ | Fix text overflow in history rows |
-| 1.0.0 | Settings UI, keyboard shortcut, full MIME, pagination |
+| 0.3.2 ✓ | cosmic-text pinned fork — no local clone required |
+| 0.4.0 ✓ | Super+V keyboard shortcut |
+| 1.0.0 | Settings UI, full MIME, pagination |

@@ -5,6 +5,7 @@ A clipboard manager for the [COSMIC™](https://system76.com/cosmic) desktop, bu
 ## Features
 
 - Text and image clipboard history — captured instantly via the `zwlr_data_control` Wayland protocol
+- `Super+V` keyboard shortcut to open from anywhere
 - Persistent history across sessions (SQLite database)
 - Fuzzy search powered by [nucleo](https://github.com/helix-editor/nucleo)
 - Pin items to keep them at the top permanently

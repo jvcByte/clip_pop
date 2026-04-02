@@ -46,6 +46,8 @@ pub struct AppModel {
     suppress_next: Option<u64>,
     /// Whether the clipboard protocol is available.
     clipboard_available: bool,
+    /// Tracks minimized state for Super+V toggle.
+    window_minimized: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +138,7 @@ impl cosmic::Application for AppModel {
             show_confirm_clear: false,
             suppress_next: None,
             clipboard_available: true,
+            window_minimized: false,
         };
 
         let command = app.update_title();
@@ -147,54 +150,17 @@ impl cosmic::Application for AppModel {
             menu::root(fl!("view")).apply(Element::from),
             menu::items(
                 &self.key_binds,
-                vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+                vec![
+                    menu::Item::Button(fl!("settings"), None, MenuAction::Settings),
+                    menu::Item::Button(fl!("about"), None, MenuAction::About),
+                ],
             ),
         )]);
         vec![menu_bar.into()]
     }
 
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        // Autostart button — different icon + style when active
-        let autostart_btn: Element<_> = if self.config.launch_on_login {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name("system-run-symbolic"))
-                    .on_press(Message::ToggleLaunchOnLogin)
-                    .class(cosmic::theme::Button::Suggested),
-                widget::text(fl!("launch-on-login")),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
-        } else {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name("system-run-symbolic"))
-                    .on_press(Message::ToggleLaunchOnLogin),
-                widget::text(fl!("launch-on-login")),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
-        };
-
-        // Private mode button — lock icon changes + style when active
-        let private_btn: Element<_> = if self.config.private_mode {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name("security-high-symbolic"))
-                    .on_press(Message::TogglePrivateMode)
-                    .class(cosmic::theme::Button::Destructive),
-                widget::text(fl!("private-mode")),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
-        } else {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name("security-low-symbolic"))
-                    .on_press(Message::TogglePrivateMode),
-                widget::text(fl!("private-mode")),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
-        };
-
-        vec![autostart_btn, private_btn]
+        vec![]
     }
 
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
@@ -207,6 +173,11 @@ impl cosmic::Application for AppModel {
                 |url| Message::LaunchUrl(url.to_string()),
                 Message::ToggleContextPage(ContextPage::About),
             ),
+            ContextPage::Settings => context_drawer::context_drawer(
+                self.settings_view(),
+                Message::ToggleContextPage(ContextPage::Settings),
+            )
+            .title(fl!("settings")),
         })
     }
 
@@ -324,14 +295,20 @@ impl cosmic::Application for AppModel {
     }
 
     /// Called when a second instance tries to launch (Super+V while already running).
-    /// Toggles window visibility — focus if hidden, minimize if visible.
+    /// Toggles window — focus if minimized/hidden, minimize if visible.
     #[cfg(feature = "single-instance")]
     fn dbus_activation(
         &mut self,
         _msg: cosmic::dbus_activation::Message,
     ) -> Task<cosmic::Action<Self::Message>> {
         if let Some(id) = self.core.main_window_id() {
-            cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id)
+            if self.window_minimized {
+                self.window_minimized = false;
+                cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id)
+            } else {
+                self.window_minimized = true;
+                cosmic::iced::window::minimize::<cosmic::Action<Message>>(id, true)
+            }
         } else {
             Task::none()
         }
@@ -539,6 +516,26 @@ impl AppModel {
         }
     }
 
+    fn settings_view(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let section = widget::settings::section()
+            .add(
+                widget::settings::item::builder(fl!("private-mode"))
+                    .description(fl!("private-mode-description"))
+                    .toggler(self.config.private_mode, |_| Message::TogglePrivateMode),
+            )
+            .add(
+                widget::settings::item::builder(fl!("launch-on-login"))
+                    .description(fl!("launch-on-login-description"))
+                    .toggler(self.config.launch_on_login, |_| Message::ToggleLaunchOnLogin),
+            );
+        widget::column::with_capacity(1)
+            .push(section)
+            .spacing(spacing.space_m)
+            .padding(spacing.space_m)
+            .into()
+    }
+
     fn history_row<'a>(
         &'a self,
         index: usize,
@@ -625,11 +622,13 @@ fn section_label<'a, M: 'a>(
 pub enum ContextPage {
     #[default]
     About,
+    Settings,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuAction {
     About,
+    Settings,
 }
 
 impl menu::action::MenuAction for MenuAction {
@@ -638,6 +637,7 @@ impl menu::action::MenuAction for MenuAction {
     fn message(&self) -> Self::Message {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
+            MenuAction::Settings => Message::ToggleContextPage(ContextPage::Settings),
         }
     }
 }

@@ -7,7 +7,10 @@ view = View
 clear-all = Clear History
 search-placeholder = Search…
 private-mode = Private Mode
+private-mode-description = Pause clipboard recording without clearing history.
 launch-on-login = Launch on Login
+launch-on-login-description = Start Clip Pop automatically when you log in.
+settings = Settings
 
 # Sections
 pinned = Pinned

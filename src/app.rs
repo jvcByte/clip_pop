@@ -22,11 +22,23 @@ const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps
 
 /// Flags type required by run_single_instance.
 #[derive(Debug, Clone, Default)]
-pub struct Flags;
+pub struct Flags {
+    pub toggle: bool,
+}
 
 impl CosmicFlags for Flags {
     type SubCommand = String;
     type Args = Vec<String>;
+
+    fn action(&self) -> Option<&String> {
+        if self.toggle {
+            // Return a static ref — use a leaked string for simplicity
+            static TOGGLE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+            Some(TOGGLE.get_or_init(|| "toggle".to_owned()))
+        } else {
+            None
+        }
+    }
 }
 
 pub struct AppModel {
@@ -295,18 +307,26 @@ impl cosmic::Application for AppModel {
     }
 
     /// Called when a second instance tries to launch (Super+V while already running).
-    /// Toggles window — focus if minimized/hidden, minimize if visible.
+    /// - Plain activate (clip_pop) → just focus
+    /// - ActivateAction "toggle" (clip_pop --toggle) → minimize if visible, focus if minimized
     fn dbus_activation(
         &mut self,
-        _msg: cosmic::dbus_activation::Message,
+        msg: cosmic::dbus_activation::Message,
     ) -> Task<cosmic::Action<Self::Message>> {
+        use cosmic::dbus_activation::Details;
+        let is_toggle = matches!(
+            msg.msg,
+            Details::ActivateAction { ref action, .. } if action == "toggle"
+        );
+
         if let Some(id) = self.core.main_window_id() {
-            if self.window_minimized {
-                self.window_minimized = false;
-                cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id)
-            } else {
+            if is_toggle && !self.window_minimized {
                 self.window_minimized = true;
                 cosmic::iced::window::minimize::<cosmic::Action<Message>>(id, true)
+            } else {
+                self.window_minimized = false;
+                cosmic::iced::window::minimize::<cosmic::Action<Message>>(id, false)
+                    .chain(cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id))
             }
         } else {
             Task::none()

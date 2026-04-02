@@ -62,10 +62,10 @@ Wayland does not support global hotkeys for third-party apps directly. To open C
 1. Open **COSMIC Settings** → **Keyboard** → **Keyboard Shortcuts** → **Custom Shortcuts**
 2. Add a new shortcut:
    - Name: `Clip Pop`
-   - Command: `clip_pop`
+   - Command: `clip_pop --toggle`
    - Shortcut: `Super+V`
 
-This launches Clip Pop (or brings it to focus if already running via autostart).
+This toggles Clip Pop — opens it if minimized, minimizes it if open.
 
 ## Autostart
 

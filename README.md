@@ -5,7 +5,7 @@ A clipboard manager for the [COSMIC™](https://system76.com/cosmic) desktop, bu
 ## Features
 
 - Text and image clipboard history — captured instantly via the `zwlr_data_control` Wayland protocol
-- `Super+V` keyboard shortcut to open from anywhere
+- `Super+V` keyboard shortcut — set up via COSMIC Settings (see below)
 - Persistent history across sessions (SQLite database)
 - Fuzzy search powered by [nucleo](https://github.com/helix-editor/nucleo)
 - Pin items to keep them at the top permanently
@@ -53,6 +53,34 @@ For development (no sudo, installs icon only):
 
 ```sh
 just dev-install
+```
+
+## Keyboard shortcut
+
+Wayland does not support global hotkeys for third-party apps directly. To open Clip Pop with `Super+V`:
+
+1. Open **COSMIC Settings** → **Keyboard** → **Keyboard Shortcuts** → **Custom Shortcuts**
+2. Add a new shortcut:
+   - Name: `Clip Pop`
+   - Command: `clip_pop`
+   - Shortcut: `Super+V`
+
+This launches Clip Pop (or brings it to focus if already running via autostart).
+
+## Autostart
+
+Enable Clip Pop to start automatically on login:
+
+```sh
+just enable-autostart
+```
+
+Or toggle it from within the app using the autostart button in the header.
+
+To disable:
+
+```sh
+just disable-autostart
 ```
 
 ## Running tests

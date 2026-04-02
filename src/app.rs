@@ -8,11 +8,9 @@ use crate::db::{Db, fuzzy_search};
 use crate::fl;
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::keyboard::{Key, Modifiers};
 use cosmic::iced::{Length, Subscription};
 use cosmic::widget::{self, about::About, menu};
 use cosmic::prelude::*;
-use cosmic::iced_futures;
 use futures::executor::block_on;
 use std::collections::HashMap;
 use std::sync::atomic;
@@ -53,8 +51,6 @@ pub enum Message {
     ToggleLaunchOnLogin,
     SearchChanged(String),
     SearchClear,
-    /// Global keyboard shortcut fired.
-    KeyboardShortcut,
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
@@ -155,14 +151,22 @@ impl cosmic::Application for AppModel {
             "security-low-symbolic"
         };
         vec![
-            widget::button::icon(widget::icon::from_name("system-run-symbolic"))
-                .on_press(Message::ToggleLaunchOnLogin)
-                .selected(self.config.launch_on_login)
-                .into(),
-            widget::button::icon(widget::icon::from_name(private_icon))
-                .on_press(Message::TogglePrivateMode)
-                .selected(self.config.private_mode)
-                .into(),
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name("system-run-symbolic"))
+                    .on_press(Message::ToggleLaunchOnLogin)
+                    .selected(self.config.launch_on_login),
+                widget::text(fl!("launch-on-login")),
+                widget::tooltip::Position::Bottom,
+            )
+            .into(),
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name(private_icon))
+                    .on_press(Message::TogglePrivateMode)
+                    .selected(self.config.private_mode),
+                widget::text(fl!("private-mode")),
+                widget::tooltip::Position::Bottom,
+            )
+            .into(),
         ]
     }
 
@@ -298,26 +302,12 @@ impl cosmic::Application for AppModel {
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::UpdateConfig(update.config));
 
-        // Global keyboard shortcut: Super+V → focus window
-        let keyboard = iced_futures::keyboard::listen().filter_map(|event| {
-            use cosmic::iced::keyboard::Event;
-            match event {
-                Event::KeyPressed { key: Key::Character(c), modifiers, .. }
-                    if c.as_str() == "v"
-                        && modifiers.contains(Modifiers::LOGO) =>
-                {
-                    Some(Message::KeyboardShortcut)
-                }
-                _ => None,
-            }
-        });
-
         if !self.clipboard_available {
-            return Subscription::batch([config_watch, keyboard]);
+            return config_watch;
         }
 
         let clipboard_watch = clipboard::watch().map(Message::ClipboardEvent);
-        Subscription::batch([config_watch, clipboard_watch, keyboard])
+        Subscription::batch([config_watch, clipboard_watch])
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
@@ -470,12 +460,6 @@ impl cosmic::Application for AppModel {
 
             Message::SearchClear => {
                 self.search_query.clear();
-            }
-
-            Message::KeyboardShortcut => {
-                if let Some(id) = self.core.main_window_id() {
-                    return cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id);
-                }
             }
 
             Message::UpdateConfig(config) => {

@@ -7,6 +7,7 @@ view = View
 clear-all = Clear History
 search-placeholder = Search…
 private-mode = Private Mode
+launch-on-login = Launch on Login
 
 # Sections
 pinned = Pinned

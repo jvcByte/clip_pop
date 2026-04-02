@@ -145,29 +145,47 @@ impl cosmic::Application for AppModel {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        let private_icon = if self.config.private_mode {
-            "security-high-symbolic"
-        } else {
-            "security-low-symbolic"
-        };
-        vec![
+        // Autostart button — different icon + style when active
+        let autostart_btn: Element<_> = if self.config.launch_on_login {
             widget::tooltip(
                 widget::button::icon(widget::icon::from_name("system-run-symbolic"))
                     .on_press(Message::ToggleLaunchOnLogin)
-                    .selected(self.config.launch_on_login),
+                    .class(cosmic::theme::Button::Suggested),
                 widget::text(fl!("launch-on-login")),
                 widget::tooltip::Position::Bottom,
             )
-            .into(),
+            .into()
+        } else {
             widget::tooltip(
-                widget::button::icon(widget::icon::from_name(private_icon))
+                widget::button::icon(widget::icon::from_name("system-run-symbolic"))
+                    .on_press(Message::ToggleLaunchOnLogin),
+                widget::text(fl!("launch-on-login")),
+                widget::tooltip::Position::Bottom,
+            )
+            .into()
+        };
+
+        // Private mode button — lock icon changes + style when active
+        let private_btn: Element<_> = if self.config.private_mode {
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name("security-high-symbolic"))
                     .on_press(Message::TogglePrivateMode)
-                    .selected(self.config.private_mode),
+                    .class(cosmic::theme::Button::Destructive),
                 widget::text(fl!("private-mode")),
                 widget::tooltip::Position::Bottom,
             )
-            .into(),
-        ]
+            .into()
+        } else {
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name("security-low-symbolic"))
+                    .on_press(Message::TogglePrivateMode),
+                widget::text(fl!("private-mode")),
+                widget::tooltip::Position::Bottom,
+            )
+            .into()
+        };
+
+        vec![autostart_btn, private_btn]
     }
 
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {

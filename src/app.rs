@@ -306,24 +306,26 @@ impl cosmic::Application for AppModel {
             .into()
     }
 
-    /// Super+V → focus. Super+Shift+V → minimize.
+    /// Super+V → focus/show. Super+Shift+V → hide.
     fn dbus_activation(
         &mut self,
         msg: cosmic::dbus_activation::Message,
     ) -> Task<cosmic::Action<Self::Message>> {
         use cosmic::dbus_activation::Details;
-        let should_minimize = matches!(
+        use cosmic::iced::window::Mode;
+
+        let should_hide = matches!(
             msg.msg,
             Details::ActivateAction { ref action, .. } if action == "minimize"
         );
 
         if let Some(id) = self.core.main_window_id() {
-            if should_minimize {
+            if should_hide {
                 self.window_minimized = true;
-                cosmic::iced::window::minimize::<cosmic::Action<Message>>(id, true)
+                cosmic::iced::window::set_mode::<cosmic::Action<Message>>(id, Mode::Hidden)
             } else {
                 self.window_minimized = false;
-                cosmic::iced::window::minimize::<cosmic::Action<Message>>(id, false)
+                cosmic::iced::window::set_mode::<cosmic::Action<Message>>(id, Mode::Windowed)
                     .chain(cosmic::iced::window::gain_focus::<cosmic::Action<Message>>(id))
             }
         } else {

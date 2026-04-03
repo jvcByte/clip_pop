@@ -57,14 +57,15 @@ just dev-install
 
 ## Keyboard shortcut
 
-Go to **View → Settings** in Clip Pop and click **Register** under Keyboard Shortcuts. This automatically adds:
+Wayland does not support global hotkeys for third-party apps directly. To open Clip Pop with `Super+V`:
 
-| Shortcut | Action |
-|---|---|
-| `Super+V` | Open / focus |
-| `Super+Shift+V` | Hide |
+1. Open **COSMIC Settings** → **Keyboard** → **Keyboard Shortcuts** → **Custom Shortcuts**
+2. Add two shortcuts:
 
-Alternatively, set them manually in COSMIC Settings → Keyboard → Custom Shortcuts.
+   | Shortcut | Command | Action |
+   |---|---|---|
+   | `Super+V` | `clip_pop` | Open / focus |
+   | `Super+Shift+V` | `clip_pop --minimize` | Minimize |
 
 ## Autostart
 

@@ -73,8 +73,6 @@ pub enum Message {
     CancelClearAll,
     TogglePrivateMode,
     ToggleLaunchOnLogin,
-    /// Write Super+V and Super+Shift+V shortcuts to COSMIC Settings config.
-    RegisterShortcuts,
     SearchChanged(String),
     SearchClear,
     LaunchUrl(String),
@@ -469,30 +467,8 @@ impl cosmic::Application for AppModel {
                 }
             }
 
-            Message::RegisterShortcuts => {
-                let shortcuts_path = dirs::config_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join("cosmic")
-                    .join("com.system76.CosmicSettings.Shortcuts")
-                    .join("v1")
-                    .join("custom");
-
-                let ron = concat!(
-                    "{\n",
-                    "    (modifiers: [\"Super\"], key: Some(\"v\")): Spawn(\"clip_pop\"),\n",
-                    "    (modifiers: [\"Super\", \"Shift\"], key: Some(\"v\")): Spawn(\"clip_pop --minimize\"),\n",
-                    "}\n"
-                );
-
-                if let Some(parent) = shortcuts_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Err(e) = std::fs::write(&shortcuts_path, ron) {
-                    error!("failed to write shortcuts: {e}");
-                }
-            }
-
-            Message::ToggleLaunchOnLogin => {                self.config.launch_on_login = !self.config.launch_on_login;
+            Message::ToggleLaunchOnLogin => {
+                self.config.launch_on_login = !self.config.launch_on_login;
                 let path = autostart_path();
                 if self.config.launch_on_login {
                     // Write autostart desktop file
@@ -572,21 +548,8 @@ impl AppModel {
                     .description(fl!("launch-on-login-description"))
                     .toggler(self.config.launch_on_login, |_| Message::ToggleLaunchOnLogin),
             );
-
-        let shortcuts_section = widget::settings::section()
-            .title(fl!("keyboard-shortcuts"))
-            .add(
-                widget::settings::item::builder(fl!("register-shortcuts"))
-                    .description(fl!("register-shortcuts-description"))
-                    .control(
-                        widget::button::standard(fl!("register"))
-                            .on_press(Message::RegisterShortcuts),
-                    ),
-            );
-
-        widget::column::with_capacity(2)
+        widget::column::with_capacity(1)
             .push(section)
-            .push(shortcuts_section)
             .spacing(spacing.space_m)
             .padding(spacing.space_m)
             .into()

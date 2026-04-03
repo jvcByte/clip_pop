@@ -10,10 +10,7 @@ private-mode = Private Mode
 private-mode-description = Pause clipboard recording without clearing history.
 launch-on-login = Launch on Login
 launch-on-login-description = Start Clip Pop automatically when you log in.
-keyboard-shortcuts = Keyboard Shortcuts
-register-shortcuts = Register Super+V / Super+Shift+V
-register-shortcuts-description = Adds Super+V (open) and Super+Shift+V (hide) to COSMIC Settings custom shortcuts.
-register = Register
+settings = Settings
 
 # Sections
 pinned = Pinned
@@ -49,4 +46,3 @@ time-days-ago = { $count ->
 }
 
 git-description = Git commit {$hash} on {$date}
-settings = Settings
